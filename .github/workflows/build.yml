@@ -1,0 +1,39 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ hashFiles('platformio.ini') }}
+      - name: Install PlatformIO
+        run: pip install platformio
+      - name: Unit tests (furnace model, LED decoder)
+        run: pio test -e native
+      - name: Firmware
+        run: pio run -e co16
+      - name: Web files image
+        run: pio run -e co16 -t buildfs
+      - name: Monitor-only check
+        # The relay expander may be addressed in exactly one place: the all-off at boot.
+        run: |
+          n=$(grep -rn "I2C_ADDR_RELAYS" src | wc -l)
+          echo "relay expander references in src/: $n"
+          test "$n" -eq 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: |
+            .pio/build/co16/firmware.bin
+            .pio/build/co16/littlefs.bin
