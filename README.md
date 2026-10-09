@@ -25,7 +25,7 @@ DI 3 is spare (no cooling). Inputs left at 0 in settings are treated as not fitt
 ## Build and flash
 
 ```sh
-pip install platformio
+pip install platformio "click<8.2"   # esptool in this platform needs click below 8.2
 pio test -e native            # furnace model and LED decoder unit tests
 pio run -e co16 -t upload     # firmware over USB-C (hold the download button if needed)
 pio run -e co16 -t uploadfs   # web page

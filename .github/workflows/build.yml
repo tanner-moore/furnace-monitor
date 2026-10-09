@@ -18,7 +18,8 @@ jobs:
           path: ~/.platformio
           key: pio-${{ hashFiles('platformio.ini') }}
       - name: Install PlatformIO
-        run: pip install platformio
+        # The platform's esptool breaks with click 8.2 and later.
+        run: pip install platformio "click<8.2"
       - name: Unit tests (furnace model, LED decoder)
         run: pio test -e native
       - name: Firmware
