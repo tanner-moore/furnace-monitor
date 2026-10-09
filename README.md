@@ -57,6 +57,7 @@ The board subscribes only to `homeassistant/status` so it can resend discovery w
 ## Layout
 
 - `lib/furnace_core/`: furnace model and LED flash decoder, plain C++ with host unit tests in `test/`
+- `tools/sim/`: simulator that serves the web page with made-up furnace data (`node tools/sim/server.mjs`)
 - `src/co16_io.*`: drivers for the XL9555 inputs, ADS1115 ADCs, MAX31865 RTD reader and the relay all-off
 - `src/monitor.*`: acquisition task, history (24 h in PSRAM) and event log
 - `src/ha_mqtt.*`, `src/web.*`, `src/net.*`: MQTT with discovery, web server, Ethernet / Wi-Fi / NTP
