@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Furnace</title>
+<style>
+  :root {
+    --bg: #f6f6f4; --card: #fff; --ink: #1d1d1b; --muted: #6b6b66; --line: #e2e2dc;
+    --on: #c2410c; --on-bg: #fff1e8; --ok: #15803d; --bad: #b91c1c; --bad-bg: #fdecec;
+    --supply: #c2410c; --return: #2563eb; --flue: #7c3aed;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161615; --card: #1f1f1d; --ink: #ecece8; --muted: #9a9a93; --line: #33332f;
+      --on: #fb923c; --on-bg: #3a2414; --ok: #4ade80; --bad: #f87171; --bad-bg: #3b1717;
+      --supply: #fb923c; --return: #60a5fa; --flue: #a78bfa;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--ink); }
+  header { display: flex; align-items: baseline; gap: 12px; padding: 16px; flex-wrap: wrap; }
+  header h1 { font-size: 20px; margin: 0; }
+  header .meta { color: var(--muted); font-size: 13px; }
+  nav { display: flex; gap: 4px; padding: 0 16px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+  nav button { background: none; border: 0; padding: 10px 12px; font: inherit; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; }
+  nav button.active { color: var(--ink); border-color: var(--ink); }
+  main { padding: 16px; max-width: 960px; margin: 0 auto; }
+  section { display: none; } section.active { display: block; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .alert { background: var(--bad-bg); color: var(--bad); border-color: var(--bad); font-weight: 600; }
+  .phases { display: grid; grid-template-columns: repeat(9, minmax(84px, 1fr)); gap: 6px; overflow-x: auto; }
+  .phases div { text-align: center; padding: 8px 4px; border-radius: 6px; border: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+  .phases div.on { background: var(--on-bg); color: var(--on); border-color: var(--on); font-weight: 600; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .grid { margin-bottom: 16px; }
+  .grid .card { margin-bottom: 0; }
+  .grid.four { grid-template-columns: repeat(4, 1fr); }
+  @media (max-width: 640px) {
+    .grid, .grid.four { grid-template-columns: repeat(2, 1fr); }
+    .phases { grid-template-columns: repeat(3, 1fr); }
+  }
+  .tile .label { color: var(--muted); font-size: 13px; }
+  .tile .value { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .tile .unit { font-size: 14px; color: var(--muted); font-weight: 400; }
+  .lamps { display: flex; flex-wrap: wrap; gap: 8px; }
+  .lamp { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+  .lamp.on { color: var(--on); border-color: var(--on); background: var(--on-bg); }
+  canvas { width: 100%; height: 260px; display: block; }
+  .legend { display: flex; gap: 16px; font-size: 13px; color: var(--muted); margin-top: 8px; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 12px; height: 3px; vertical-align: middle; margin-right: 6px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  td { padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.time { color: var(--muted); white-space: nowrap; width: 1%; padding-right: 12px; }
+  form label { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: center; margin-bottom: 8px; font-size: 14px; }
+  input { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); width: 100%; }
+  fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 0 0 16px; padding: 12px; }
+  legend { color: var(--muted); font-size: 13px; padding: 0 4px; }
+  .btn { font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--ink); background: var(--ink); color: var(--bg); cursor: pointer; }
+  .note { color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Furnace</h1>
+  <span class="meta" id="meta">connecting…</span>
+</header>
+<nav>
+  <button data-tab="live" class="active">Live</button>
+  <button data-tab="history">History</button>
+  <button data-tab="events">Events</button>
+  <button data-tab="settings">Settings</button>
+</nav>
+<main>
+  <section id="live" class="active">
+    <div class="card alert" id="alert" hidden></div>
+    <div class="card">
+      <div class="phases" id="phases"></div>
+    </div>
+    <div class="grid">
+      <div class="card tile"><div class="label">Supply</div><div class="value" id="t_supply">–</div></div>
+      <div class="card tile"><div class="label">Return</div><div class="value" id="t_return">–</div></div>
+      <div class="card tile"><div class="label">Rise</div><div class="value" id="delta_t">–</div></div>
+      <div class="card tile"><div class="label">Flue</div><div class="value" id="t_flue">–</div></div>
+      <div class="card tile"><div class="label">Inducer</div><div class="value" id="i_inducer">–</div></div>
+      <div class="card tile"><div class="label">Blower</div><div class="value" id="i_blower">–</div></div>
+    </div>
+    <div class="card">
+      <div class="lamps" id="lamps"></div>
+    </div>
+    <div class="grid four">
+      <div class="card tile"><div class="label">Cycles today</div><div class="value" id="cycles_today">–</div></div>
+      <div class="card tile"><div class="label">Burner today</div><div class="value" id="burner_min_today">–</div></div>
+      <div class="card tile"><div class="label">High fire today</div><div class="value" id="high_fire_min_today">–</div></div>
+      <div class="card tile"><div class="label">Control board</div><div class="value" style="font-size:16px" id="board_status">–</div></div>
+    </div>
+  </section>
+
+  <section id="history">
+    <div class="card">
+      <canvas id="chart"></canvas>
+      <div class="legend">
+        <span><i style="background:var(--supply)"></i>Supply</span>
+        <span><i style="background:var(--return)"></i>Return</span>
+        <span><i style="background:var(--flue)"></i>Flue</span>
+        <span><i style="background:var(--on-bg);height:10px;border:1px solid var(--on)"></i>Burner on</span>
+      </div>
+    </div>
+    <p class="note">Last 24 hours, kept on the board. Home Assistant keeps the long-term history.</p>
+  </section>
+
+  <section id="events">
+    <div class="card"><table id="eventTable"></table></div>
+  </section>
+
+  <section id="settings">
+    <form id="settingsForm" class="card"></form>
+    <form id="updateForm" class="card">
+      <p><strong>Firmware update</strong></p>
+      <p class="note">Upload firmware.bin, or littlefs.bin with "Web files" ticked.</p>
+      <label>File <input type="file" name="file" required></label>
+      <label>Web files <input type="checkbox" name="fs" style="width:auto"></label>
+      <button class="btn">Upload</button>
+      <p class="note" id="updateMsg"></p>
+    </form>
+  </section>
+</main>
+
+<script>
+const PHASES = [
+  ["idle", "Idle"], ["heat_call", "Heat call"], ["ignition", "Ignition"], ["low_fire", "Low fire"],
+  ["high_fire", "High fire"], ["post_purge", "Post-purge"], ["blower_overrun", "Blower overrun"],
+  ["fan_only", "Fan only"], ["lockout", "Lockout"],
+];
+const LAMPS = [
+  ["heat_call", "W1 call"], ["heat_call_2", "W2 call"], ["fan_call", "Fan call"], ["inducer", "Inducer"],
+  ["inducer_high", "Inducer high"], ["burner", "Gas valve"], ["high_fire", "High fire"], ["flame", "Flame"],
+  ["blower", "Blower"],
+];
+const $ = (id) => document.getElementById(id);
+const fmt = (v, unit, d = 1) => v === null || v === undefined ? "–" : `${v.toFixed(d)}<span class="unit"> ${unit}</span>`;
+const useF = (navigator.language || "").startsWith("en-US");
+const temp = (c) => c === null ? null : useF ? c * 9 / 5 + 32 : c;
+const tUnit = useF ? "°F" : "°C";
+const rise = (c) => c === null ? null : useF ? c * 9 / 5 : c;
+
+$("phases").innerHTML = PHASES.map(([k, n]) => `<div data-p="${k}">${n}</div>`).join("");
+$("lamps").innerHTML = LAMPS.map(([k, n]) => `<span class="lamp" data-l="${k}">${n}</span>`).join("");
+
+function render(s) {
+  document.querySelectorAll("[data-p]").forEach((el) => el.classList.toggle("on", el.dataset.p === s.phase));
+  document.querySelectorAll("[data-l]").forEach((el) => el.classList.toggle("on", !!s[el.dataset.l]));
+  $("t_supply").innerHTML = fmt(temp(s.t_supply), tUnit);
+  $("t_return").innerHTML = fmt(temp(s.t_return), tUnit);
+  $("delta_t").innerHTML = fmt(rise(s.delta_t), tUnit);
+  $("t_flue").innerHTML = fmt(temp(s.t_flue), tUnit, 0);
+  $("i_inducer").innerHTML = fmt(s.i_inducer, "A", 2);
+  $("i_blower").innerHTML = fmt(s.i_blower, "A", 1);
+  $("cycles_today").textContent = s.cycles_today;
+  $("burner_min_today").innerHTML = fmt(s.burner_min_today, "min", 0);
+  $("high_fire_min_today").innerHTML = fmt(s.high_fire_min_today, "min", 0);
+  $("board_status").textContent = s.board_status;
+  const alert = $("alert");
+  alert.hidden = !s.problem;
+  alert.textContent = s.problem ? `Problem: ${s.alerts.replaceAll("_", " ").replaceAll(",", ", ")}` : "";
+  $("meta").textContent = `${s.link} ${s.ip} · MQTT ${s.mqtt ? "connected" : "off"} · up ${Math.floor(s.uptime_s / 3600)} h`;
+}
+
+function connect() {
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onmessage = (e) => render(JSON.parse(e.data));
+  ws.onclose = () => { $("meta").textContent = "reconnecting…"; setTimeout(connect, 2000); };
+}
+connect();
+
+// Tabs
+document.querySelectorAll("nav button").forEach((b) => b.onclick = () => {
+  document.querySelectorAll("nav button, section").forEach((el) => el.classList.remove("active"));
+  b.classList.add("active");
+  $(b.dataset.tab).classList.add("active");
+  ({ history: loadHistory, events: loadEvents, settings: loadSettings })[b.dataset.tab]?.();
+});
+
+// History chart
+async function loadHistory() {
+  const h = await (await fetch("/api/history?hours=24")).json();
+  const c = $("chart"), ctx = c.getContext("2d"), dpr = devicePixelRatio || 1;
+  c.width = c.clientWidth * dpr; c.height = c.clientHeight * dpr; ctx.scale(dpr, dpr);
+  const W = c.clientWidth, H = c.clientHeight, L = 40, B = 20;
+  const css = getComputedStyle(document.documentElement), col = (n) => css.getPropertyValue(n).trim();
+  ctx.clearRect(0, 0, W, H);
+  if (!h.t.length) { ctx.fillStyle = col("--muted"); ctx.fillText("No history yet", L, 20); return; }
+  const series = [["supply", "--supply"], ["return", "--return"], ["flue", "--flue"]];
+  const vals = series.flatMap(([k]) => h[k]).filter((v) => v !== null).map(temp);
+  const lo = Math.floor(Math.min(...vals) / 10) * 10, hi = Math.ceil(Math.max(...vals) / 10) * 10 || 10;
+  const n = h.t.length, x = (i) => L + (W - L - 8) * i / Math.max(1, n - 1), y = (v) => (H - B) - (H - B - 8) * (v - lo) / Math.max(1, hi - lo);
+  ctx.fillStyle = col("--on-bg");
+  h.flags.forEach((f, i) => { if (f & 24) ctx.fillRect(x(i), 0, Math.max(1, x(1) - x(0)), H - B); });
+  ctx.strokeStyle = col("--line"); ctx.fillStyle = col("--muted"); ctx.font = "11px system-ui";
+  for (let v = lo; v <= hi; v += Math.max(10, Math.round((hi - lo) / 50) * 10)) {
+    ctx.beginPath(); ctx.moveTo(L, y(v)); ctx.lineTo(W, y(v)); ctx.stroke();
+    ctx.fillText(`${v}${tUnit}`, 0, y(v) + 4);
+  }
+  for (let i = 0; i < n; i += Math.ceil(n / 6)) {
+    const d = new Date(h.t[i] * 1000);
+    if (h.t[i]) ctx.fillText(d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }), x(i), H - 4);
+  }
+  ctx.lineWidth = 2;
+  for (const [k, c] of series) {
+    ctx.strokeStyle = col(c); ctx.beginPath(); let pen = false;
+    h[k].forEach((v, i) => { if (v === null) { pen = false; return; } const p = [x(i), y(temp(v))]; pen ? ctx.lineTo(...p) : ctx.moveTo(...p); pen = true; });
+    ctx.stroke();
+  }
+}
+
+// Events
+async function loadEvents() {
+  const ev = await (await fetch("/api/events")).json();
+  $("eventTable").innerHTML = ev.map((e) => {
+    const t = e.time ? new Date(e.time * 1000).toLocaleString() : `#${e.seq}`;
+    return `<tr><td class="time">${t}</td><td>${e.text.replace(/</g, "&lt;")}</td></tr>`;
+  }).join("") || "<tr><td>No events yet</td></tr>";
+}
+
+// Settings: built from the config JSON so new fields appear automatically.
+const SECRETS = ["wifiPass", "mqttPass", "webPass"];
+async function loadSettings() {
+  const r = await fetch("/api/config");
+  if (!r.ok) { $("settingsForm").innerHTML = "<p>Sign in to change settings: open <a href='/api/config'>this link</a>, enter the web login, then come back and reopen Settings.</p>"; return; }
+  const cfg = await r.json();
+  const field = (k, v, path) => `<label>${k}<input name="${path}" value="${v ?? ""}" ${typeof v === "number" ? 'inputmode="decimal"' : ""} data-num="${typeof v === "number"}"></label>`;
+  let html = "<fieldset><legend>Settings</legend>";
+  for (const [k, v] of Object.entries(cfg)) if (k !== "model") html += field(k, v, k);
+  for (const k of SECRETS) html += `<label>${k}<input type="password" name="${k}" placeholder="unchanged"></label>`;
+  html += "</fieldset><fieldset><legend>Furnace model</legend>";
+  for (const [k, v] of Object.entries(cfg.model)) html += field(k, v, `model.${k}`);
+  html += '</fieldset><button class="btn">Save and restart</button>';
+  $("settingsForm").innerHTML = html;
+}
+$("settingsForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const out = { model: {} };
+  for (const el of e.target.querySelectorAll("input")) {
+    const v = el.dataset.num === "true" ? Number(el.value) : el.value;
+    if (el.name.startsWith("model.")) out.model[el.name.slice(6)] = v; else out[el.name] = v;
+  }
+  const r = await fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(out) });
+  alert(await r.text());
+};
+
+$("updateForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const f = e.target, body = new FormData();
+  body.append("file", f.file.files[0]);
+  $("updateMsg").textContent = "Uploading…";
+  const r = await fetch(`/update${f.fs.checked ? "?target=fs" : ""}`, { method: "POST", body });
+  $("updateMsg").textContent = await r.text();
+};
+</script>
+</body>
+</html>
