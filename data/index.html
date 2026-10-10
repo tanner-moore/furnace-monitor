@@ -502,6 +502,9 @@ const SETTINGS_TABS = [
     ] },
   ] },
   { id: "alerts", name: "Alerts", sections: [
+    { title: "Control board", note: "Picking a board fills in its timings below. Change any of them and this shows Custom.", fields: [
+      ["boardPreset", "Board", "", "preset"],
+    ] },
     { title: "Motors", note: "Current that counts as running.", fields: [
       ["model.inducerOnAmps", "Inducer running above", "", "A"],
       ["model.inducerHighAmps", "Inducer on high speed above", "", "A"],
@@ -542,6 +545,35 @@ const SETTINGS_TABS = [
     ] },
   ] },
 ];
+// Control board presets: the timing settings each board's sequence calls for. Values are in the
+// firmware's own units (seconds, counts).
+const BOARD_PRESETS = [
+  { id: "generic", name: "Generic (firmware defaults)", values: {
+    "model.flameConfirmS": 5, "model.ignitionTimeoutS": 90, "model.ignitionTrials": 2,
+    "model.blowerDelayS": 90, "model.shortCycleS": 180 } },
+  // Pre-purge, then 11 to 21 s of ignitor warm-up before the valve opens; 3 tries before lockout;
+  // blower on 45 s after flame.
+  { id: "wr50a51", name: "White-Rodgers 50A51-495", values: {
+    "model.flameConfirmS": 5, "model.ignitionTimeoutS": 60, "model.ignitionTrials": 2,
+    "model.blowerDelayS": 75, "model.shortCycleS": 180 } },
+];
+const presetSelect = (label) => `<label><span>${label}</span><select name="boardPreset" data-skip="true">${
+  [...BOARD_PRESETS.map((b) => `<option value="${b.id}">${attr(b.name)}</option>`), '<option value="custom">Custom</option>'].join("")}</select></label>`;
+function matchPreset() {
+  const sel = document.querySelector('select[name="boardPreset"]');
+  if (!sel) return;
+  const val = (k) => Number(document.querySelector(`input[name="${k}"]`)?.value);
+  const hit = BOARD_PRESETS.find((b) => Object.entries(b.values).every(([k, v]) => val(k) === v));
+  sel.value = hit ? hit.id : "custom";
+}
+function applyPreset(id) {
+  const b = BOARD_PRESETS.find((x) => x.id === id);
+  if (!b) return;
+  for (const [k, v] of Object.entries(b.values)) {
+    const el = document.querySelector(`input[name="${k}"]`);
+    if (el) el.value = toShown(el.dataset.kind, v);
+  }
+}
 const tUnitS = useF ? "°F" : "°C";
 const toShown = (kind, v) => !useF ? v : kind === "temp" ? Math.round((v * 9 / 5 + 32) * 10) / 10 : kind === "dtemp" ? Math.round(v * 9 / 5 * 10) / 10 : v;
 const fromShown = (kind, v) => !useF ? v : kind === "temp" ? (v - 32) * 5 / 9 : kind === "dtemp" ? v * 5 / 9 : v;
@@ -563,6 +595,7 @@ async function loadSettings() {
   const placed = new Set();
   const field = ([k, label, hint = "", kind = ""]) => {
     placed.add(k);
+    if (kind === "preset") return presetSelect(attr(label));
     const v = get(k);
     if (kind !== "secret" && v === undefined) return "";
     const unit = kind === "temp" || kind === "dtemp" ? tUnitS : kind === "tz" || kind === "secret" ? "" : kind;
@@ -583,13 +616,17 @@ async function loadSettings() {
   $("settingsForm").innerHTML = tabs.map((t) => `<div class="spanel" data-panel="${t.id}"><div class="card">${t.html}</div></div>`).join("") +
     '<div class="card savebar"><button class="btn">Save and restart</button><span class="note">Saves every tab. The board restarts to apply changes.</span></div>';
   document.querySelectorAll("#settingsTabs button").forEach((b) => b.onclick = () => showSettingsTab(b.dataset.st));
+  const preset = document.querySelector('select[name="boardPreset"]');
+  preset.onchange = () => { applyPreset(preset.value); matchPreset(); };
+  document.querySelectorAll('#settingsForm input[name^="model."]').forEach((el) => el.oninput = matchPreset);
+  matchPreset();
   showSettingsTab(tabs.some((t) => t.id === settingsTab) ? settingsTab : "network");
 }
 $("settingsForm").onsubmit = async (e) => {
   e.preventDefault();
   const out = { model: {} };
   for (const el of e.target.querySelectorAll("input, select")) {
-    if (el.type === "password" && !el.value) continue;
+    if ((el.type === "password" && !el.value) || el.dataset.skip) continue;
     const v = el.dataset.bool ? el.checked : el.dataset.num === "true" ? fromShown(el.dataset.kind, Number(el.value)) : el.value;
     if (el.name.startsWith("model.")) out.model[el.name.slice(6)] = v; else out[el.name] = v;
   }
