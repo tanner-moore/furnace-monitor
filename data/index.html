@@ -60,6 +60,12 @@
   .subtabs button.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
   .spanel { display: none; } .spanel.active { display: block; }
   form label .hint { display: block; color: var(--muted); font-size: 12px; }
+  .ctl { display: flex; gap: 6px; align-items: center; min-width: 0; }
+  .ctl input, .ctl select { flex: 1; min-width: 0; }
+  .ctl input[type=checkbox] { flex: none; width: auto; }
+  .ctl .changed { border-color: var(--bad); color: var(--bad); background: var(--bad-bg); }
+  .ctl input[type=checkbox].changed { outline: 2px solid var(--bad); outline-offset: 2px; }
+  .reset { font: inherit; font-size: 12px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--bad); background: none; color: var(--bad); cursor: pointer; white-space: nowrap; }
   .savebar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   legend { color: var(--muted); font-size: 13px; padding: 0 4px; }
   .btn { font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--ink); background: var(--ink); color: var(--bg); cursor: pointer; }
@@ -437,10 +443,10 @@ const TIME_ZONES = [
   ["New Zealand", "NZST-12NZDT,M9.5.0,M4.1.0/3"],
 ];
 const attr = (s) => String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-const tzSelect = (v, label) => {
+const tzSelect = (v) => {
   const opts = TIME_ZONES.some(([, tz]) => tz === v) ? TIME_ZONES : [...TIME_ZONES, [`Custom (${v})`, v]];
-  return `<label><span>${label}</span><select name="tz">${opts.map(([name, tz]) =>
-    `<option value="${attr(tz)}" ${tz === v ? "selected" : ""}>${attr(name)}</option>`).join("")}</select></label>`;
+  return `<select name="tz" data-def>${opts.map(([name, tz]) =>
+    `<option value="${attr(tz)}" ${tz === v ? "selected" : ""}>${attr(name)}</option>`).join("")}</select>`;
 };
 // Settings tabs. Each field: [key, label, hint, kind]. kind: "secret", "tz", "temp" (absolute °C),
 // "dtemp" (°C difference) or a unit shown after the label. Keys under model. are furnace model settings.
@@ -502,7 +508,7 @@ const SETTINGS_TABS = [
     ] },
   ] },
   { id: "alerts", name: "Alerts", sections: [
-    { title: "Control board", note: "Picking a board fills in its timings below. Change any of them and this shows Custom.", fields: [
+    { title: "Control board", note: "Picking a board fills in its timings below and makes them the defaults those fields reset to.", fields: [
       ["boardPreset", "Board", "", "preset"],
     ] },
     { title: "Motors", note: "Current that counts as running.", fields: [
@@ -557,22 +563,39 @@ const BOARD_PRESETS = [
     "model.flameConfirmS": 5, "model.ignitionTimeoutS": 60, "model.ignitionTrials": 2,
     "model.blowerDelayS": 75, "model.shortCycleS": 180 } },
 ];
-const presetSelect = (label) => `<label><span>${label}</span><select name="boardPreset" data-skip="true">${
-  [...BOARD_PRESETS.map((b) => `<option value="${b.id}">${attr(b.name)}</option>`), '<option value="custom">Custom</option>'].join("")}</select></label>`;
-function matchPreset() {
-  const sel = document.querySelector('select[name="boardPreset"]');
-  if (!sel) return;
-  const val = (k) => Number(document.querySelector(`input[name="${k}"]`)?.value);
-  const hit = BOARD_PRESETS.find((b) => Object.entries(b.values).every(([k, v]) => val(k) === v));
-  sel.value = hit ? hit.id : "custom";
+let settingsDefaults = {};
+const presetById = (id) => BOARD_PRESETS.find((b) => b.id === id) || BOARD_PRESETS[0];
+const presetSelect = (label, v) => `<label><span>${label}</span><select name="boardPreset">${
+  BOARD_PRESETS.map((b) => `<option value="${b.id}" ${b.id === v ? "selected" : ""}>${attr(b.name)}</option>`).join("")}</select></label>`;
+// The default for a field: the chosen board's value for its timings, otherwise the firmware's factory value.
+function defaultFor(k) {
+  const board = presetById(document.querySelector('select[name="boardPreset"]')?.value).values;
+  if (k in board) return board[k];
+  return k.startsWith("model.") ? settingsDefaults.model?.[k.slice(6)] : settingsDefaults[k];
 }
+const fieldValue = (el) => el.dataset.bool ? el.checked
+  : el.dataset.num === "true" ? fromShown(el.dataset.kind, Number(el.value)) : el.value;
+function setFieldValue(el, v) {
+  if (el.dataset.bool) el.checked = !!v;
+  else el.value = el.dataset.num === "true" ? toShown(el.dataset.kind, v) : v;
+}
+// Red when a field differs from its default, with a Reset button beside it.
+function markField(el) {
+  const btn = el.parentElement.querySelector(".reset");
+  if (!btn) return;
+  const def = defaultFor(el.name), cur = fieldValue(el);
+  const tol = el.dataset.kind === "temp" || el.dataset.kind === "dtemp" ? 0.06 : 1e-9;
+  const changed = def !== undefined && (typeof def === "number" ? !(Math.abs(cur - def) <= tol) : cur !== def);
+  el.classList.toggle("changed", changed);
+  btn.hidden = !changed;
+}
+const markAll = () => document.querySelectorAll("#settingsForm [data-def]").forEach(markField);
 function applyPreset(id) {
-  const b = BOARD_PRESETS.find((x) => x.id === id);
-  if (!b) return;
-  for (const [k, v] of Object.entries(b.values)) {
-    const el = document.querySelector(`input[name="${k}"]`);
-    if (el) el.value = toShown(el.dataset.kind, v);
+  for (const [k, v] of Object.entries(presetById(id).values)) {
+    const el = document.querySelector(`#settingsForm [name="${k}"]`);
+    if (el) setFieldValue(el, v);
   }
+  markAll();
 }
 const tUnitS = useF ? "°F" : "°C";
 const toShown = (kind, v) => !useF ? v : kind === "temp" ? Math.round((v * 9 / 5 + 32) * 10) / 10 : kind === "dtemp" ? Math.round(v * 9 / 5 * 10) / 10 : v;
@@ -584,27 +607,34 @@ function showSettingsTab(id) {
   document.querySelectorAll("#settings .spanel").forEach((p) => p.classList.toggle("active", p.dataset.panel === id));
 }
 async function loadSettings() {
-  const r = await fetch("/api/config");
+  const [r, d] = await Promise.all([fetch("/api/config"), fetch("/api/defaults").catch(() => null)]);
   if (!r.ok) {
     $("settingsTabs").innerHTML = "";
     $("settingsForm").innerHTML = "<p class='card'>Sign in to change settings: open <a href='/api/config'>this link</a>, enter the web login, then come back and reopen Settings.</p>";
     return;
   }
   const cfg = await r.json();
+  settingsDefaults = d && d.ok ? await d.json() : {};
   const get = (k) => k.startsWith("model.") ? cfg.model?.[k.slice(6)] : cfg[k];
   const placed = new Set();
+  const withReset = (k, input) =>
+    `<span class="ctl">${input}<button type="button" class="reset" data-reset="${k}" hidden>Reset</button></span>`;
   const field = ([k, label, hint = "", kind = ""]) => {
     placed.add(k);
-    if (kind === "preset") return presetSelect(attr(label));
+    if (kind === "preset") return presetSelect(attr(label), presetById(cfg.boardPreset).id);
     const v = get(k);
     if (kind !== "secret" && v === undefined) return "";
     const unit = kind === "temp" || kind === "dtemp" ? tUnitS : kind === "tz" || kind === "secret" ? "" : kind;
     const name = `${attr(label)}${unit ? ` (${unit})` : ""}${hint ? `<span class="hint">${attr(hint)}</span>` : ""}`;
-    if (kind === "tz") return tzSelect(v, name);
     if (kind === "secret") return `<label><span>${name}</span><input type="password" name="${k}" placeholder="unchanged" autocomplete="new-password"></label>`;
-    if (typeof v === "boolean") return `<label><span>${name}</span><input type="checkbox" name="${k}" ${v ? "checked" : ""} data-bool="true" style="width:auto;justify-self:start"></label>`;
-    const num = typeof v === "number";
-    return `<label><span>${name}</span><input name="${k}" value="${attr(num ? toShown(kind, v) : v ?? "")}" ${num ? 'inputmode="decimal"' : ""} data-num="${num}" data-kind="${kind}"></label>`;
+    let input;
+    if (kind === "tz") input = tzSelect(v);
+    else if (typeof v === "boolean") input = `<input type="checkbox" name="${k}" ${v ? "checked" : ""} data-bool="true" data-def>`;
+    else {
+      const num = typeof v === "number";
+      input = `<input name="${k}" value="${attr(num ? toShown(kind, v) : v ?? "")}" ${num ? 'inputmode="decimal"' : ""} data-num="${num}" data-kind="${kind}" data-def>`;
+    }
+    return `<label><span>${name}</span>${withReset(k, input)}</label>`;
   };
   const section = (sec) => `<fieldset>${sec.title ? `<legend>${attr(sec.title)}</legend>` : ""}${sec.note ? `<p class="note" style="margin-top:0">${attr(sec.note)}</p>` : ""}${sec.fields.map(field).join("")}</fieldset>`;
   const tabs = SETTINGS_TABS.map((t) => ({ ...t, html: t.sections.map(section).join("") }));
@@ -614,20 +644,24 @@ async function loadSettings() {
   if (extra.length) tabs.push({ id: "other", name: "Other", html: section({ fields: extra }) });
   $("settingsTabs").innerHTML = tabs.map((t) => `<button type="button" data-st="${t.id}">${attr(t.name)}</button>`).join("");
   $("settingsForm").innerHTML = tabs.map((t) => `<div class="spanel" data-panel="${t.id}"><div class="card">${t.html}</div></div>`).join("") +
-    '<div class="card savebar"><button class="btn">Save and restart</button><span class="note">Saves every tab. The board restarts to apply changes.</span></div>';
+    '<div class="card savebar"><button class="btn">Save and restart</button><span class="note">Saves every tab. The board restarts to apply changes. Red fields differ from their defaults.</span></div>';
   document.querySelectorAll("#settingsTabs button").forEach((b) => b.onclick = () => showSettingsTab(b.dataset.st));
-  const preset = document.querySelector('select[name="boardPreset"]');
-  preset.onchange = () => { applyPreset(preset.value); matchPreset(); };
-  document.querySelectorAll('#settingsForm input[name^="model."]').forEach((el) => el.oninput = matchPreset);
-  matchPreset();
+  document.querySelector('select[name="boardPreset"]').onchange = (e) => applyPreset(e.target.value);
+  document.querySelectorAll("#settingsForm [data-def]").forEach((el) => el.addEventListener(el.tagName === "SELECT" || el.dataset.bool ? "change" : "input", () => markField(el)));
+  document.querySelectorAll("#settingsForm .reset").forEach((b) => b.onclick = () => {
+    const el = document.querySelector(`#settingsForm [name="${b.dataset.reset}"]`);
+    setFieldValue(el, defaultFor(el.name));
+    markField(el);
+  });
+  markAll();
   showSettingsTab(tabs.some((t) => t.id === settingsTab) ? settingsTab : "network");
 }
 $("settingsForm").onsubmit = async (e) => {
   e.preventDefault();
   const out = { model: {} };
   for (const el of e.target.querySelectorAll("input, select")) {
-    if ((el.type === "password" && !el.value) || el.dataset.skip) continue;
-    const v = el.dataset.bool ? el.checked : el.dataset.num === "true" ? fromShown(el.dataset.kind, Number(el.value)) : el.value;
+    if (el.type === "password" && !el.value) continue;
+    const v = fieldValue(el);
     if (el.name.startsWith("model.")) out.model[el.name.slice(6)] = v; else out[el.name] = v;
   }
   const r = await fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(out) });

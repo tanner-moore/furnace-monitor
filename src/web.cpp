@@ -166,6 +166,15 @@ void begin() {
     sendJson(req, doc);
   });
 
+  // Factory defaults, so the settings page can show what was changed and offer a reset.
+  server.on("/api/defaults", HTTP_GET, [](AsyncWebServerRequest* req) {
+    if (!authorized(req)) return;
+    static const Config defaults{};
+    JsonDocument doc;
+    defaults.toJson(doc.to<JsonObject>(), false);
+    sendJson(req, doc);
+  });
+
   auto* save = new AsyncCallbackJsonWebHandler("/api/config", [](AsyncWebServerRequest* req, JsonVariant& body) {
     if (!authorized(req)) return;
     config.fromJson(body.as<JsonObjectConst>());

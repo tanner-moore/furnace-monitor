@@ -96,6 +96,7 @@ const CONFIG = {
   displayHeight: 240, displayRotation: 0, displayFahrenheit: true,
   aiInducer: 1, aiBlower: 2, aiLed: 3, inducerAmpsPerVolt: 0.5, blowerAmpsPerVolt: 2, ledOnVolts: 2,
   rtdSupply: 1, rtdReturn: 2, rtdFlue: 3, rtdSpare: 0, offsetSupply: 0, offsetReturn: 0, offsetFlue: 0, offsetSpare: 0,
+  boardPreset: "generic",
   model: { inducerOnAmps: 0.3, inducerHighAmps: 1.2, blowerOnAmps: 1, flameConfirmS: 5, ignitionTimeoutS: 90,
            shortCycleS: 180, blowerDelayS: 90, settleS: 300, minDeltaTC: 15, maxSupplyC: 85, minFlueRiseC: 10,
            ignitionTrials: 2, riseSettleS: 180 },
@@ -123,6 +124,7 @@ const server = createServer((req, res) => {
   else if (url.pathname === "/api/history") json(historyJson(Math.min(24, Math.max(1, Number(url.searchParams.get("hours")) || 24))));
   else if (url.pathname === "/api/events") json([...events].reverse());
   else if (url.pathname === "/api/config" && req.method === "GET") json(CONFIG);
+  else if (url.pathname === "/api/defaults") json(CONFIG);
   else if (url.pathname === "/api/config") text(200, "simulator: settings not saved");
   else if (url.pathname === "/update") { req.resume(); req.on("end", () => text(200, "simulator: update ignored")); }
   else text(404, "not found");

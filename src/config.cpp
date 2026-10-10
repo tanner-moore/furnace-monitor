@@ -18,7 +18,8 @@ static const char* kPath = "/config.json";
   X(aiInducer) X(aiBlower) X(aiLed)                        \
   X(inducerAmpsPerVolt) X(blowerAmpsPerVolt) X(ledOnVolts) \
   X(rtdSupply) X(rtdReturn) X(rtdFlue) X(rtdSpare)         \
-  X(offsetSupply) X(offsetReturn) X(offsetFlue) X(offsetSpare)
+  X(offsetSupply) X(offsetReturn) X(offsetFlue) X(offsetSpare) \
+  X(boardPreset)
 
 #define SECRET_FIELDS(X) X(wifiPass) X(mqttPass) X(webPass)
 
