@@ -204,11 +204,11 @@ const LAMPS = [
   ["blower", "Blower"], ["co_alarm", "CO alarm"],
 ];
 const $ = (id) => document.getElementById(id);
-const fmt = (v, unit, d = 1) => v === null || v === undefined ? "–" : `${v.toFixed(d)}<span class="unit"> ${unit}</span>`;
+const fmt = (v, unit, d = 1) => typeof v !== "number" || !isFinite(v) ? "–" : `${v.toFixed(d)}<span class="unit"> ${unit}</span>`;
 const useF = (navigator.language || "").startsWith("en-US");
-const temp = (c) => c === null ? null : useF ? c * 9 / 5 + 32 : c;
+const temp = (c) => c == null ? null : useF ? c * 9 / 5 + 32 : c;
 const tUnit = useF ? "°F" : "°C";
-const rise = (c) => c === null ? null : useF ? c * 9 / 5 : c;
+const rise = (c) => c == null ? null : useF ? c * 9 / 5 : c;
 
 $("phases").innerHTML = PHASES.map(([k, n]) => `<div data-p="${k}">${n}</div>`).join("");
 $("lamps").innerHTML = LAMPS.map(([k, n]) => `<span class="lamp" data-l="${k}">${n}</span>`).join("");
