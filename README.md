@@ -6,7 +6,7 @@ Custom firmware for a KinCony CO16 (ESP32-S3) that watches a Trane TUD120R954H4 
 
 The full build plan (sensors, wiring, safety notes) is in the project's [build plan](https://claude.ai/code/artifact/326b1ad6-307e-4024-a8b6-6d7a18347500).
 
-## Inputs (defaults, changeable on the Settings page)
+## Inputs (defaults, changeable on the Settings Wiring tab)
 
 | Signal | Pickup | CO16 input |
 | --- | --- | --- |
@@ -39,13 +39,13 @@ pio run -e co16 -t upload     # firmware over USB-C (hold the download button if
 pio run -e co16 -t uploadfs   # web page
 ```
 
-After the first flash, updates can go through the web page (Settings, Firmware update) using `firmware.bin` and `littlefs.bin` from `.pio/build/co16/` or from the CI build artifacts.
+After the first flash, updates can go through the web page (Settings, Login and firmware tab) using `firmware.bin` and `littlefs.bin` from `.pio/build/co16/` or from the CI build artifacts.
 
 ## First start
 
 1. Plug Ethernet into the CO16. It gets an address by DHCP and answers at `http://furnace-co16.local/`.
 2. With no Ethernet (and no Wi-Fi configured) it opens a `furnace-setup` access point after a minute; browse to `http://192.168.4.1/`.
-3. Open Settings (default login `admin` / `furnace`, change it), pick your time zone, set the MQTT broker, and save. The board restarts and appears in Home Assistant as **Furnace**.
+3. Open Settings (default login `admin` / `furnace`; change it on the Login and firmware tab), pick your time zone on the Network tab, set the MQTT broker on the Home Assistant tab, and save. The board restarts and appears in Home Assistant as **Furnace**.
 
 ## MQTT
 
@@ -70,11 +70,11 @@ With a card in the CO16's slot (FAT32), the board writes one-minute averages to 
 
 ## Bench tab
 
-For first power-up and calibration: all 16 digital inputs, all 16 analog input voltages, each PT100 channel's resistance and fault bits, the control board LED's measured flash timing, and which on-board chips answered. Type a clamp meter reading into the CT helper and it gives the `AmpsPerVolt` value to save in Settings.
+For first power-up and calibration: all 16 digital inputs, all 16 analog input voltages, each PT100 channel's resistance and fault bits, the control board LED's measured flash timing, and which on-board chips answered. Type a clamp meter reading into the CT helper and it gives the `AmpsPerVolt` value to save on the Settings Calibration tab.
 
 ## Screen
 
-The built-in ST7789 shows the phase, temperatures, any alert, today's cycles, filter life and the board's address. The panel size is a first guess (`displayWidth`/`displayHeight` 240 x 240, `displayRotation`); adjust in Settings if the picture is offset or cut off.
+The built-in ST7789 shows the phase, temperatures, any alert, today's cycles, filter life and the board's address. The panel size is a first guess (`displayWidth`/`displayHeight` 240 x 240, `displayRotation`); adjust on the Settings Screen and SD card tab if the picture is offset or cut off.
 
 ## Layout
 
