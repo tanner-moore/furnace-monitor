@@ -34,6 +34,17 @@ static void test_fault_code_needs_two_matching_groups() {
   TEST_ASSERT_EQUAL_STRING("pressure switch problem", FlashDecoder::describe(d.code()));
 }
 
+static void test_reports_pulse_lengths() {
+  FlashDecoder d;
+  Player p{d};
+  p.hold(false, 500);
+  p.hold(true, 300);
+  p.hold(false, 700);
+  p.hold(true, 100);
+  TEST_ASSERT_EQUAL_UINT32(300, d.lastOnMs());
+  TEST_ASSERT_EQUAL_UINT32(700, d.lastOffMs());
+}
+
 static void test_heartbeat_is_normal() {
   FlashDecoder d;
   Player p{d};
@@ -71,6 +82,7 @@ static void test_goes_stale() {
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_fault_code_needs_two_matching_groups);
+  RUN_TEST(test_reports_pulse_lengths);
   RUN_TEST(test_heartbeat_is_normal);
   RUN_TEST(test_steady_on);
   RUN_TEST(test_goes_stale);

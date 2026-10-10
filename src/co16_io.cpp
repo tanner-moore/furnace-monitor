@@ -14,6 +14,9 @@ static Adafruit_ADS1115 adc[4];
 static bool adcOk[4];
 static const uint8_t kAdcAddr[4] = {I2C_ADDR_ADC_1_4, I2C_ADDR_ADC_5_8, I2C_ADDR_ADC_9_12, I2C_ADDR_ADC_13_16};
 
+static ChipStatus chips;
+static SemaphoreHandle_t spiMutex;
+
 static constexpr float kRtdNominal = 100.0f;  // PT100
 static constexpr float kRtdRef = 400.0f;      // CO16 reference resistor
 
@@ -27,19 +30,27 @@ static bool i2cWrite(uint8_t addr, const uint8_t* data, size_t len) {
 // This is the only place the firmware ever addresses the relay expander.
 static void forceRelaysOff() {
   const uint8_t allOff[2] = {0xFF, 0xFF};
-  if (!i2cWrite(I2C_ADDR_RELAYS, allOff, sizeof allOff)) log_w("relay expander did not answer");
+  chips.relays = i2cWrite(I2C_ADDR_RELAYS, allOff, sizeof allOff);
+  if (!chips.relays) log_w("relay expander did not answer");
 }
 
+void spiLock() { xSemaphoreTakeRecursive(spiMutex, portMAX_DELAY); }
+void spiUnlock() { xSemaphoreGiveRecursive(spiMutex); }
+
+ChipStatus chipStatus() { return chips; }
+
 void begin() {
+  spiMutex = xSemaphoreCreateRecursiveMutex();
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL, 100000);
   forceRelaysOff();
 
   // XL9555: make sure both ports are inputs (configuration registers 6 and 7).
   const uint8_t cfg[3] = {0x06, 0xFF, 0xFF};
-  if (!i2cWrite(I2C_ADDR_INPUTS, cfg, sizeof cfg)) log_e("input expander did not answer");
+  chips.inputs = i2cWrite(I2C_ADDR_INPUTS, cfg, sizeof cfg);
+  if (!chips.inputs) log_e("input expander did not answer");
 
   for (int i = 0; i < 4; i++) {
-    adcOk[i] = adc[i].begin(kAdcAddr[i], &Wire);
+    adcOk[i] = chips.adc[i] = adc[i].begin(kAdcAddr[i], &Wire);
     if (adcOk[i]) {
       adc[i].setGain(GAIN_ONE);  // +/-4.096 V full scale
       adc[i].setDataRate(RATE_ADS1115_860SPS);
@@ -55,7 +66,8 @@ void begin() {
   pinMode(PIN_SD_CS, OUTPUT);
   digitalWrite(PIN_SD_CS, HIGH);
   SPI.begin(PIN_SPI_SCK, PIN_SPI_MISO, PIN_SPI_MOSI);
-  if (!rtd.begin(MAX31865_3WIRE)) log_e("MAX31865 init failed");
+  chips.rtd = rtd.begin(MAX31865_3WIRE);
+  if (!chips.rtd) log_e("MAX31865 init failed");
 }
 
 bool readInputs(uint16_t& bits) {
@@ -79,22 +91,26 @@ float readAnalogVolts(uint8_t input) {
   return v;
 }
 
-float readRtdC(uint8_t channel) {
-  if (channel < 1 || channel > 4) return NAN;
+bool readRtd(uint8_t channel, RtdReading& out) {
+  out = RtdReading();
+  if (channel < 1 || channel > 4) return false;
+  spiLock();
   // Mux select: channel 1 = S1 low, S2 low; S3 is tied low on the board.
   // Mapping still to be confirmed against a probe on each channel.
   const uint8_t sel = channel - 1;
   digitalWrite(PIN_RTD_MUX_S1, sel & 1);
   digitalWrite(PIN_RTD_MUX_S2, (sel >> 1) & 1);
   delay(20);
-  const float t = rtd.temperature(kRtdNominal, kRtdRef);
-  const uint8_t fault = rtd.readFault();
-  if (fault) {
-    rtd.clearFault();
-    return NAN;
-  }
-  if (t < -50.0f || t > 450.0f) return NAN;
-  return t;
+  const uint16_t raw = rtd.readRTD();
+  out.fault = rtd.readFault();
+  if (out.fault) rtd.clearFault();
+  spiUnlock();
+  out.ohms = raw * kRtdRef / 32768.0f;
+  if (out.fault) return false;
+  const float t = rtd.calculateTemperature(raw, kRtdNominal, kRtdRef);
+  if (t < -50.0f || t > 450.0f) return false;
+  out.tempC = t;
+  return true;
 }
 
 }  // namespace co16

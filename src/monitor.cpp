@@ -9,15 +9,22 @@
 #include "config.h"
 #include "flash_decoder.h"
 #include "rtc_ds3231.h"
+#include "sdlog.h"
 
 namespace monitor {
 
 using furnace::FlashDecoder;
 using furnace::Model;
 
-// History: one sample every 5 s for 24 h, kept in PSRAM.
+// Fine history: one sample every 5 s for 24 h. Coarse history: one-minute
+// averages for 30 days, reloaded from the SD card at boot. Both in PSRAM.
 static constexpr uint32_t kSampleEveryMs = 5000;
-static constexpr size_t kHistoryLen = 24 * 3600 / 5;
+static constexpr uint32_t kFinePeriodS = 5;
+static constexpr size_t kFineLen = 24 * 3600 / kFinePeriodS;
+static constexpr uint32_t kCoarsePeriodS = 60;
+static constexpr size_t kCoarseLen = 30 * 24 * 60;
+
+static constexpr uint32_t kBenchHoldMs = 15000;
 
 struct Sample {
   uint32_t epoch;
@@ -28,17 +35,39 @@ struct Sample {
 };
 enum : uint8_t { kFlagW1 = 1, kFlagW2 = 2, kFlagG = 4, kFlagMvl = 8, kFlagMvh = 16, kFlagFlame = 32, kFlagBlower = 64 };
 
+struct Ring {
+  Sample* buf = nullptr;
+  size_t len = 0, head = 0, count = 0;
+  uint32_t periodS = 0;
+
+  void push(const Sample& s) {
+    if (!buf) return;
+    buf[head] = s;
+    head = (head + 1) % len;
+    if (count < len) count++;
+  }
+  // i = 1 is the newest sample.
+  const Sample& back(size_t i) const { return buf[(head + len - i) % len]; }
+};
+
 static constexpr size_t kEventLen = 200;
+static constexpr size_t kCycleLen = 100;
 
 static SemaphoreHandle_t lock;
 static Snapshot snap;
 static Model model;
 static FlashDecoder led;
 
-static Sample* history;
-static size_t histHead, histCount;
+static Ring fine, coarse;
 static Event events[kEventLen];
 static uint32_t eventSeq;
+static CycleRecord cycles[kCycleLen];
+static size_t cycleCount;
+static uint32_t cycleSeq;
+
+static Bench benchData;
+static volatile uint32_t benchUntilMs;
+static volatile bool filterResetPending;
 
 static Preferences prefs;
 
@@ -50,22 +79,30 @@ static uint8_t packAmps(float v) { return isnan(v) ? 255 : (uint8_t)constrain(lr
 
 static bool inputOn(uint16_t bits, uint8_t input) { return input >= 1 && input <= 16 && (bits >> (input - 1)) & 1; }
 
-static float rtdOrNan(uint8_t ch, float offset) {
-  if (ch == 0) return NAN;
-  const float t = co16::readRtdC(ch);
-  return isnan(t) ? NAN : t + offset;
-}
-
 static time_t nowEpoch() {
   time_t t = time(nullptr);
   return t > 1700000000 ? t : 0;
 }
 
-static void addEventLocked(const char* text) {
+static void storeEventLocked(time_t epoch, const char* text) {
   Event& e = events[eventSeq % kEventLen];
   e.seq = ++eventSeq;
-  e.epoch = nowEpoch();
+  e.epoch = epoch;
   strlcpy(e.text, text, sizeof e.text);
+}
+
+static void addEventLocked(const char* text) {
+  const time_t epoch = nowEpoch();
+  storeEventLocked(epoch, text);
+  if (config.sdLogging) sdlog::logEvent((uint32_t)epoch, text);
+}
+
+static void storeCycleLocked(uint32_t seq, uint32_t epoch, const furnace::CycleStats& c) {
+  CycleRecord& r = cycles[cycleCount % kCycleLen];
+  r.seq = seq;
+  r.epoch = epoch;
+  r.stats = c;
+  cycleCount++;
 }
 
 void logEvent(const char* fmt, ...) {
@@ -85,7 +122,17 @@ void applySettings() {
   xSemaphoreGive(lock);
 }
 
-// --- acquisition task -----------------------------------------------------
+void resetFilter() { filterResetPending = true; }
+
+Bench bench() {
+  benchUntilMs = millis() + kBenchHoldMs;
+  xSemaphoreTake(lock, portMAX_DELAY);
+  Bench b = benchData;
+  xSemaphoreGive(lock);
+  return b;
+}
+
+// --- persistence ----------------------------------------------------------
 
 static void saveDayCounters(int yday) {
   const auto& st = model.state();
@@ -95,19 +142,74 @@ static void saveDayCounters(int yday) {
   prefs.putUInt("highS", st.highFireSecondsToday);
 }
 
+static void saveTotals() {
+  const furnace::Totals t = model.state().totals;
+  prefs.putBytes("totals", &t, sizeof t);
+  prefs.putUInt("filterAt", snap.filterChangedEpoch);
+}
+
+// --- one-minute averages --------------------------------------------------
+
+struct MinuteAcc {
+  uint32_t minute = 0;  // epoch / 60
+  int n = 0;
+  float sum[5];
+  int cnt[5];
+  uint8_t flags = 0, phase = 0;
+
+  void add(float v, int i) {
+    if (isnan(v)) return;
+    sum[i] += v;
+    cnt[i]++;
+  }
+  float avg(int i) const { return cnt[i] ? sum[i] / cnt[i] : NAN; }
+  void reset(uint32_t m) {
+    minute = m;
+    n = 0;
+    flags = 0;
+    for (int i = 0; i < 5; i++) sum[i] = 0, cnt[i] = 0;
+  }
+};
+
+static Sample toSample(const sdlog::MinuteRow& r) {
+  Sample s;
+  s.epoch = r.epoch;
+  s.supply10 = pack10(r.supplyC);
+  s.return10 = pack10(r.returnC);
+  s.flue10 = pack10(r.flueC);
+  s.inducerA10 = packAmps(r.inducerAmps);
+  s.blowerA10 = packAmps(r.blowerAmps);
+  s.flags = r.flags;
+  s.phase = r.phase;
+  return s;
+}
+
+// --- acquisition task -----------------------------------------------------
+
+static bool rtdUsed(uint8_t ch) {
+  return ch == config.rtdSupply || ch == config.rtdReturn || ch == config.rtdFlue || ch == config.rtdSpare;
+}
+
 static void task(void*) {
   furnace::Inputs in;
   float spare = NAN, ledV = NAN;
   uint16_t raw = 0;
   bool inputsOk = false;
-  uint8_t rtdStep = 0;
+  uint8_t rtdStep = 0, benchAi = 0;
   uint32_t lastAnalogMs = 0, lastRtdMs = 0, lastSampleMs = 0, lastSaveMs = 0;
   int lastYday = prefs.getInt("yday", -1);
-  bool rtcWritten = false;
+  bool rtcWritten = false, filterDueWas = false;
+  MinuteAcc acc;
+  acc.reset(0);
   char buf[96];
+
+  Bench b;
+  for (int i = 0; i < 16; i++) b.aiVolts[i] = NAN;
+  for (int i = 0; i < 4; i++) b.rtdOhms[i] = b.rtdC[i] = NAN, b.rtdFault[i] = 0;
 
   for (;;) {
     const uint32_t now = millis();
+    const bool benchOn = (int32_t)(benchUntilMs - now) > 0;
 
     // Digital inputs every pass (50 ms).
     uint16_t bits;
@@ -118,6 +220,7 @@ static void task(void*) {
     in.g = inputOn(raw, config.diG);
     in.mvl = inputOn(raw, config.diMvl);
     in.mvh = inputOn(raw, config.diMvh);
+    in.coAlarm = config.diCo && inputOn(raw, config.diCo) != config.coOnOpen;
 
     // LED light sensor every pass, so flashes are not missed.
     if (config.aiLed) {
@@ -133,16 +236,35 @@ static void task(void*) {
       in.blowerAmps = config.aiBlower ? co16::readAnalogVolts(config.aiBlower) * config.blowerAmpsPerVolt : NAN;
     }
 
-    // One PT100 channel every 500 ms (each read blocks ~90 ms).
+    // Bench mode: one more analog input per pass, all 16 in under a second.
+    if (benchOn) {
+      b.aiVolts[benchAi] = co16::readAnalogVolts(benchAi + 1);
+      benchAi = (benchAi + 1) % 16;
+    }
+
+    // One PT100 channel every 500 ms (each read blocks ~90 ms). Channels not
+    // assigned to anything are only read in bench mode.
     if (now - lastRtdMs >= 500) {
       lastRtdMs = now;
-      switch (rtdStep++ % 4) {
-        case 0: in.supplyC = rtdOrNan(config.rtdSupply, config.offsetSupply); break;
-        case 1: in.returnC = rtdOrNan(config.rtdReturn, config.offsetReturn); break;
-        case 2: in.flueC = rtdOrNan(config.rtdFlue, config.offsetFlue); break;
-        case 3: spare = rtdOrNan(config.rtdSpare, config.offsetSpare); break;
+      for (int tries = 0; tries < 4; tries++) {
+        const uint8_t ch = rtdStep++ % 4 + 1;
+        if (!benchOn && !rtdUsed(ch)) continue;
+        co16::RtdReading r;
+        co16::readRtd(ch, r);
+        b.rtdOhms[ch - 1] = r.ohms;
+        b.rtdC[ch - 1] = r.tempC;
+        b.rtdFault[ch - 1] = r.fault;
+        if (ch == config.rtdSupply) in.supplyC = r.tempC + config.offsetSupply;
+        if (ch == config.rtdReturn) in.returnC = r.tempC + config.offsetReturn;
+        if (ch == config.rtdFlue) in.flueC = r.tempC + config.offsetFlue;
+        if (ch == config.rtdSpare) spare = r.tempC + config.offsetSpare;
+        break;
       }
     }
+    if (!config.rtdSupply) in.supplyC = NAN;
+    if (!config.rtdReturn) in.returnC = NAN;
+    if (!config.rtdFlue) in.flueC = NAN;
+    if (!config.rtdSpare) spare = NAN;
 
     in.sensorFault = !inputsOk || (config.rtdSupply && isnan(in.supplyC)) || (config.rtdReturn && isnan(in.returnC)) ||
                      (config.rtdFlue && isnan(in.flueC)) || (config.aiInducer && isnan(in.inducerAmps)) ||
@@ -162,6 +284,15 @@ static void task(void*) {
       }
     }
 
+    if (filterResetPending) {
+      filterResetPending = false;
+      model.resetFilter();
+      snap.filterChangedEpoch = (uint32_t)epoch;
+      filterDueWas = false;
+      saveTotals();
+      addEventLocked("filter changed");
+    }
+
     const furnace::Phase before = model.state().phase;
     const uint32_t ev = model.update(in, now);
     const auto& st = model.state();
@@ -170,9 +301,17 @@ static void task(void*) {
       snprintf(buf, sizeof buf, "%s -> %s", furnace::phaseName(before), furnace::phaseName(st.phase));
       addEventLocked(buf);
     }
+    if (ev & (1u << (int)furnace::Event::TrialFailed)) {
+      snprintf(buf, sizeof buf, "ignition trial failed (%lu this call)", (unsigned long)st.failedTrialsThisCall);
+      addEventLocked(buf);
+    }
     if (ev & (1u << (int)furnace::Event::CycleEnded)) {
       snprintf(buf, sizeof buf, "burner cycle ended after %lu s", (unsigned long)st.lastCycleSeconds);
       addEventLocked(buf);
+      storeCycleLocked(++cycleSeq, (uint32_t)epoch, st.lastCycle);
+      snap.lastCycleEpoch = (uint32_t)epoch;
+      if (config.sdLogging) sdlog::logCycle({(uint32_t)epoch, st.lastCycle});
+      saveTotals();
     }
     if (model.newAlerts()) {
       char names[160];
@@ -180,6 +319,9 @@ static void task(void*) {
       snprintf(buf, sizeof buf, "alert: %s", names);
       addEventLocked(buf);
     }
+    const bool filterDue = config.filterLifeHours && st.totals.filterBlowerSeconds >= config.filterLifeHours * 3600u;
+    if (filterDue && !filterDueWas) addEventLocked("filter change due");
+    filterDueWas = filterDue;
 
     snap.uptimeS = now / 1000;
     snap.epoch = epoch;
@@ -189,10 +331,20 @@ static void task(void*) {
     snap.ledVolts = ledV;
     snap.rawInputs = raw;
     snap.inputsOk = inputsOk;
+    snap.sdOk = config.sdLogging && sdlog::ok();
 
-    if (history && now - lastSampleMs >= kSampleEveryMs) {
+    b.inputs = raw;
+    b.inputsOk = inputsOk;
+    b.ledVolts = ledV;
+    b.ledLit = !isnan(ledV) && ledV >= config.ledOnVolts;
+    b.ledOnMs = led.lastOnMs();
+    b.ledOffMs = led.lastOffMs();
+    b.boardCode = in.boardCode;
+    benchData = b;
+
+    if (now - lastSampleMs >= kSampleEveryMs) {
       lastSampleMs = now;
-      Sample& s = history[histHead];
+      Sample s;
       s.epoch = (uint32_t)epoch;
       s.supply10 = pack10(in.supplyC);
       s.return10 = pack10(in.returnC);
@@ -202,14 +354,43 @@ static void task(void*) {
       s.flags = (in.w1 ? kFlagW1 : 0) | (in.w2 ? kFlagW2 : 0) | (in.g ? kFlagG : 0) | (in.mvl ? kFlagMvl : 0) |
                 (in.mvh ? kFlagMvh : 0) | (st.flame ? kFlagFlame : 0) | (st.blowerOn ? kFlagBlower : 0);
       s.phase = (uint8_t)st.phase;
-      histHead = (histHead + 1) % kHistoryLen;
-      if (histCount < kHistoryLen) histCount++;
+      fine.push(s);
+
+      // Fold the 5 s samples into one-minute averages (needs the clock).
+      if (epoch) {
+        const uint32_t minute = (uint32_t)epoch / kCoarsePeriodS;
+        if (minute != acc.minute) {
+          if (acc.n) {
+            sdlog::MinuteRow r;
+            r.epoch = acc.minute * kCoarsePeriodS;
+            r.supplyC = acc.avg(0);
+            r.returnC = acc.avg(1);
+            r.flueC = acc.avg(2);
+            r.inducerAmps = acc.avg(3);
+            r.blowerAmps = acc.avg(4);
+            r.flags = acc.flags;
+            r.phase = acc.phase;
+            coarse.push(toSample(r));
+            if (config.sdLogging) sdlog::logMinute(r);
+          }
+          acc.reset(minute);
+        }
+        acc.n++;
+        acc.add(in.supplyC, 0);
+        acc.add(in.returnC, 1);
+        acc.add(in.flueC, 2);
+        acc.add(in.inducerAmps, 3);
+        acc.add(in.blowerAmps, 4);
+        acc.flags |= s.flags;
+        acc.phase = s.phase;
+      }
     }
 
-    // Persist today's counters every 10 minutes so a reboot loses little.
+    // Persist counters every 10 minutes so a reboot loses little.
     if (now - lastSaveMs >= 600000 && lastYday >= 0) {
       lastSaveMs = now;
       saveDayCounters(lastYday);
+      saveTotals();
     }
     xSemaphoreGive(lock);
 
@@ -222,12 +403,19 @@ static void task(void*) {
   }
 }
 
+static bool allocRing(Ring& r, size_t len, uint32_t periodS) {
+  r.buf = (Sample*)heap_caps_calloc(len, sizeof(Sample), MALLOC_CAP_SPIRAM);
+  r.len = len;
+  r.periodS = periodS;
+  return r.buf != nullptr;
+}
+
 void begin() {
   lock = xSemaphoreCreateMutex();
   model.setSettings(config.model);
 
-  history = (Sample*)heap_caps_calloc(kHistoryLen, sizeof(Sample), MALLOC_CAP_SPIRAM);
-  if (!history) log_e("no PSRAM for history");
+  if (!allocRing(fine, kFineLen, kFinePeriodS) || !allocRing(coarse, kCoarseLen, kCoarsePeriodS))
+    log_e("no PSRAM for history");
 
   co16::begin();
 
@@ -245,6 +433,25 @@ void begin() {
     localtime_r(&epoch, &lt);
     if (prefs.getInt("yday", -1) == lt.tm_yday)
       model.restoreDay(prefs.getUInt("cycles", 0), prefs.getUInt("burnerS", 0), prefs.getUInt("highS", 0));
+  }
+  furnace::Totals totals;
+  if (prefs.getBytesLength("totals") == sizeof totals) {
+    prefs.getBytes("totals", &totals, sizeof totals);
+    model.restoreTotals(totals);
+  }
+  snap.filterChangedEpoch = prefs.getUInt("filterAt", 0);
+
+  // Read recent history, cycles and events back from the SD card. Nothing else
+  // is running yet, so the rings need no lock here.
+  if (config.sdLogging && sdlog::begin()) {
+    const uint32_t t0 = millis();
+    if (epoch) sdlog::readMinutes((uint32_t)epoch - kCoarseLen * kCoarsePeriodS, [](const sdlog::MinuteRow& r) {
+      coarse.push(toSample(r));
+    });
+    sdlog::readCycles(kCycleLen, [](const sdlog::CycleRow& r) { storeCycleLocked(0, r.epoch, r.stats); });
+    sdlog::readEvents(kEventLen, [](uint32_t e, const char* text) { storeEventLocked(e, text); });
+    log_i("restored %u minutes, %u cycles, %u events from SD in %u ms", (unsigned)coarse.count, (unsigned)cycleCount,
+          (unsigned)eventSeq, (unsigned)(millis() - t0));
   }
 
   xTaskCreatePinnedToCore(task, "acquire", 8192, nullptr, 3, nullptr, 1);
@@ -265,6 +472,8 @@ static void putNum(JsonObject o, const char* key, float v, int decimals = 1) {
     o[key] = roundf(v * p) / p;
   }
 }
+
+static float hours(uint32_t seconds) { return seconds / 3600.0f; }
 
 void stateJson(const Snapshot& s, JsonObject o) {
   char alerts[200];
@@ -289,11 +498,45 @@ void stateJson(const Snapshot& s, JsonObject o) {
   o["burner_min_today"] = s.st.burnerSecondsToday / 60;
   o["high_fire_min_today"] = s.st.highFireSecondsToday / 60;
   o["last_cycle_s"] = s.st.lastCycleSeconds;
+  o["failed_trials"] = s.st.failedTrialsThisCall;
+
+  // The last completed burner cycle (null until one ends after boot).
+  const furnace::CycleStats& c = s.st.lastCycle;
+  const bool haveCycle = s.st.lastCycleSeconds > 0;
+  if (haveCycle) o["cycle_ignition_s"] = c.ignitionSeconds; else o["cycle_ignition_s"] = nullptr;
+  putNum(o, "cycle_rise_low", c.riseLowC);
+  putNum(o, "cycle_rise_high", c.riseHighC);
+  putNum(o, "cycle_flue_max", c.flueMaxC);
+  putNum(o, "cycle_inducer_a", c.inducerAmps, 2);
+  putNum(o, "cycle_blower_a", c.blowerAmps, 2);
+
+  const furnace::Totals& t = s.st.totals;
+  o["total_cycles"] = t.cycles;
+  o["total_failed_ignitions"] = t.failedTrials;
+  putNum(o, "total_burner_h", hours(t.burnerSeconds));
+  putNum(o, "total_high_fire_h", hours(t.highFireSeconds));
+  putNum(o, "total_blower_h", hours(t.blowerSeconds));
+
+  const float filterH = hours(t.filterBlowerSeconds);
+  putNum(o, "filter_h", filterH);
+  o["filter_life_h"] = config.filterLifeHours;
+  if (config.filterLifeHours) {
+    o["filter_pct"] = (int)constrain(lroundf(100.0f * (1.0f - filterH / config.filterLifeHours)), 0, 100);
+    o["filter_due"] = filterH >= config.filterLifeHours;
+  } else {
+    o["filter_pct"] = nullptr;
+    o["filter_due"] = false;
+  }
+  o["filter_changed"] = s.filterChangedEpoch;
+
+  o["co_alarm"] = s.in.coAlarm;
+  o["co_fitted"] = config.diCo != 0;
   o["problem"] = s.st.alerts != 0;
   o["alerts"] = furnace::alertNames(s.st.alerts, alerts, sizeof alerts);
   o["board_code"] = s.in.boardCode;
   o["board_status"] = FlashDecoder::describe(s.in.boardCode);
   o["inputs"] = s.rawInputs;
+  o["sd"] = s.sdOk;
   o["uptime_s"] = s.uptimeS;
   o["time"] = (uint32_t)s.epoch;
 }
@@ -308,15 +551,56 @@ size_t eventsAfter(uint32_t afterSeq, Event* out, size_t max) {
   return n;
 }
 
-void historyJson(uint32_t hours, size_t maxPoints, JsonObject o) {
+static void cycleJson(const CycleRecord& r, JsonObject e) {
+  const furnace::CycleStats& c = r.stats;
+  e["time"] = r.epoch;
+  e["seconds"] = c.seconds;
+  e["high_fire_s"] = c.highFireSeconds;
+  e["ignition_s"] = c.ignitionSeconds;
+  putNum(e, "rise_low", c.riseLowC);
+  putNum(e, "rise_high", c.riseHighC);
+  putNum(e, "flue_max", c.flueMaxC);
+  putNum(e, "inducer_a", c.inducerAmps, 2);
+  putNum(e, "blower_a", c.blowerAmps, 2);
+}
+
+void cyclesJson(size_t max, JsonArray a) {
   xSemaphoreTake(lock, portMAX_DELAY);
-  const size_t want = min((size_t)(hours * 3600 / 5), histCount);
+  const size_t n = min(max, min(cycleCount, kCycleLen));
+  for (size_t i = 1; i <= n; i++) cycleJson(cycles[(cycleCount - i) % kCycleLen], a.add<JsonObject>());
+  xSemaphoreGive(lock);
+}
+
+size_t cyclesAfter(uint32_t afterSeq, CycleRecord* out, size_t max) {
+  xSemaphoreTake(lock, portMAX_DELAY);
+  const size_t held = min(cycleCount, kCycleLen);
+  size_t n = 0;
+  for (size_t i = held; i >= 1 && n < max; i--) {
+    const CycleRecord& r = cycles[(cycleCount - i) % kCycleLen];
+    if (r.seq > afterSeq) out[n++] = r;
+  }
+  xSemaphoreGive(lock);
+  return n;
+}
+
+void historyJson(uint32_t hrs, size_t maxPoints, JsonObject o) {
+  xSemaphoreTake(lock, portMAX_DELAY);
+  // Use the 5 s samples when they cover the request (or cover as much as the
+  // minute averages do, e.g. right after a boot without an SD card).
+  const uint32_t wantS = hrs * 3600;
+  const uint32_t fineS = fine.count * fine.periodS, coarseS = coarse.count * coarse.periodS;
+  const Ring& r = (hrs <= 24 && fineS >= min(wantS, coarseS)) ? fine : coarse;
+
+  const size_t want = min((size_t)(wantS / r.periodS), r.count);
   const size_t step = max((size_t)1, (want + maxPoints - 1) / max((size_t)1, maxPoints));
   JsonArray t = o["t"].to<JsonArray>(), sup = o["supply"].to<JsonArray>(), ret = o["return"].to<JsonArray>(),
             flue = o["flue"].to<JsonArray>(), ind = o["inducer"].to<JsonArray>(), blo = o["blower"].to<JsonArray>(),
             flags = o["flags"].to<JsonArray>();
   for (size_t i = want; i >= step; i -= step) {
-    const Sample& s = history[(histHead + kHistoryLen - i) % kHistoryLen];
+    // Over a step of several samples, keep any flag seen (so short burns show).
+    uint8_t f = 0;
+    for (size_t j = 0; j < step; j++) f |= r.back(i - j).flags;
+    const Sample& s = r.back(i);
     t.add(s.epoch);
     auto add10 = [](JsonArray a, int16_t v) {
       if (v == INT16_MIN) a.add(nullptr); else a.add(unpack10(v));
@@ -326,8 +610,9 @@ void historyJson(uint32_t hours, size_t maxPoints, JsonObject o) {
     add10(flue, s.flue10);
     if (s.inducerA10 == 255) ind.add(nullptr); else ind.add(s.inducerA10 / 10.0f);
     if (s.blowerA10 == 255) blo.add(nullptr); else blo.add(s.blowerA10 / 10.0f);
-    flags.add(s.flags);
+    flags.add(f);
   }
+  o["period_s"] = r.periodS * step;
   o["flag_bits"] = "1=W1 2=W2 4=G 8=MVL 16=MVH 32=flame 64=blower";
   xSemaphoreGive(lock);
 }

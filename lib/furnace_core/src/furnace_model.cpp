@@ -32,6 +32,7 @@ const char* alertNames(uint32_t alerts, char* buf, size_t len) {
       {ALERT_FLUE_NO_RISE, "flue_no_rise"},
       {ALERT_SENSOR_FAULT, "sensor_fault"},
       {ALERT_BOARD_FAULT, "board_fault"},
+      {ALERT_CO_ALARM, "co_alarm"},
   };
   if (len == 0) return buf;
   buf[0] = '\0';
@@ -61,6 +62,16 @@ void Model::restoreDay(uint32_t cycles, uint32_t burnerS, uint32_t highFireS) {
   st_.highFireSecondsToday = highFireS;
 }
 
+// Adds dtMs to a millisecond carry and returns the whole seconds it completes.
+static inline uint32_t addTime(uint32_t& carryMs, uint32_t dtMs) {
+  carryMs += dtMs;
+  const uint32_t whole = carryMs / 1000;
+  carryMs %= 1000;
+  return whole;
+}
+
+static inline float average(double sum, uint32_t ms) { return ms ? (float)(sum / ms) : NAN; }
+
 uint32_t Model::update(const Inputs& in, uint32_t nowMs) {
   uint32_t events = 0;
   const uint32_t dtMs = started_ ? nowMs - lastMs_ : 0;
@@ -79,43 +90,110 @@ uint32_t Model::update(const Inputs& in, uint32_t nowMs) {
     valveSeenThisCall_ = false;
     flameSeenThisCall_ = false;
     flameLossLatched_ = false;
+    st_.failedTrialsThisCall = 0;
   }
   w1Was_ = in.w1;
 
-  // Track the gas valve; a burner cycle runs from valve open to valve close.
+  st_.deltaTC = (std::isnan(in.supplyC) || std::isnan(in.returnC)) ? NAN : in.supplyC - in.returnC;
+
+  // Track the gas valve. Each opening is an ignition trial; it becomes a burner
+  // cycle once the valve is held long enough to prove flame.
   if (valve && !valveWas_) {
     valveSinceMs_ = nowMs;
     valveSeenThisCall_ = true;
     flueAtValveOpen_ = in.flueC;
+    cycleFlame_ = false;
+    cycleIgnitionS_ = in.w1 ? elapsedS(nowMs, w1SinceMs_) : 0;
+    cycleHighMs_ = 0;
+    highWas_ = in.mvh;
+    stageSinceMs_ = nowMs;
+    flueMax_ = NAN;
+    riseLowSum_ = riseHighSum_ = inducerSum_ = blowerSum_ = 0;
+    riseLowMs_ = riseHighMs_ = inducerMs_ = blowerMs_ = 0;
     events |= 1u << (int)Event::CycleStarted;
   }
+
+  if (valve) {
+    if (in.mvh != highWas_) {
+      highWas_ = in.mvh;
+      stageSinceMs_ = nowMs;
+    }
+    if (in.mvh) cycleHighMs_ += dtMs;
+    const bool settled = elapsedS(nowMs, stageSinceMs_) >= s_.riseSettleS;
+    if (settled && !std::isnan(st_.deltaTC)) {
+      if (in.mvh) {
+        riseHighSum_ += (double)st_.deltaTC * dtMs;
+        riseHighMs_ += dtMs;
+      } else {
+        riseLowSum_ += (double)st_.deltaTC * dtMs;
+        riseLowMs_ += dtMs;
+      }
+    }
+    if (!std::isnan(in.flueC) && (std::isnan(flueMax_) || in.flueC > flueMax_)) flueMax_ = in.flueC;
+    if (!std::isnan(in.inducerAmps)) {
+      inducerSum_ += (double)in.inducerAmps * dtMs;
+      inducerMs_ += dtMs;
+    }
+    if (!std::isnan(in.blowerAmps) && st_.blowerOn) {
+      blowerSum_ += (double)in.blowerAmps * dtMs;
+      blowerMs_ += dtMs;
+    }
+  }
+
   if (!valve && valveWas_) {
-    st_.lastCycleSeconds = elapsedS(nowMs, valveSinceMs_);
-    st_.cyclesToday++;
-    shortCycleLatched_ = st_.lastCycleSeconds < s_.shortCycleS;
-    if (in.w1 && flameSeenThisCall_) flameLossLatched_ = true;
-    events |= 1u << (int)Event::CycleEnded;
+    if (cycleFlame_) {
+      CycleStats& c = st_.lastCycle;
+      c.seconds = elapsedS(nowMs, valveSinceMs_);
+      c.highFireSeconds = cycleHighMs_ / 1000;
+      c.ignitionSeconds = cycleIgnitionS_;
+      c.riseLowC = average(riseLowSum_, riseLowMs_);
+      c.riseHighC = average(riseHighSum_, riseHighMs_);
+      c.flueMaxC = flueMax_;
+      c.inducerAmps = average(inducerSum_, inducerMs_);
+      c.blowerAmps = average(blowerSum_, blowerMs_);
+      st_.lastCycleSeconds = c.seconds;
+      st_.cyclesToday++;
+      st_.totals.cycles++;
+      shortCycleLatched_ = c.seconds < s_.shortCycleS;
+      if (in.w1) flameLossLatched_ = true;
+      events |= 1u << (int)Event::CycleEnded;
+    } else {
+      // The board opened the valve for a trial and closed it without proving
+      // flame (the 50A51 retries a few times, then locks out).
+      st_.failedTrialsThisCall++;
+      st_.totals.failedTrials++;
+      if (st_.failedTrialsThisCall >= s_.ignitionTrials) ignitionFailLatched_ = true;
+      events |= 1u << (int)Event::TrialFailed;
+    }
   }
   valveWas_ = valve;
 
   // Runtime accounting with millisecond carry so short updates are not lost.
   if (valve) {
-    msCarryBurner_ += dtMs;
-    st_.burnerSecondsToday += msCarryBurner_ / 1000;
-    msCarryBurner_ %= 1000;
+    const uint32_t s = addTime(msCarryBurner_, dtMs);
+    st_.burnerSecondsToday += s;
+    st_.totals.burnerSeconds += s;
   }
   if (in.mvh) {
-    msCarryHigh_ += dtMs;
-    st_.highFireSecondsToday += msCarryHigh_ / 1000;
-    msCarryHigh_ %= 1000;
+    const uint32_t s = addTime(msCarryHigh_, dtMs);
+    st_.highFireSecondsToday += s;
+    st_.totals.highFireSeconds += s;
+  }
+  if (st_.blowerOn) {
+    const uint32_t s = addTime(msCarryBlower_, dtMs);
+    st_.totals.blowerSeconds += s;
+    st_.totals.filterBlowerSeconds += s;
   }
 
   // The 50A51 only holds the valve open while it proves flame, so a valve held
   // past flameConfirmS means flame.
   st_.flame = valve && elapsedS(nowMs, valveSinceMs_) >= s_.flameConfirmS;
-  if (st_.flame) flameSeenThisCall_ = true;
-
-  st_.deltaTC = (std::isnan(in.supplyC) || std::isnan(in.returnC)) ? NAN : in.supplyC - in.returnC;
+  if (st_.flame) {
+    flameSeenThisCall_ = true;
+    cycleFlame_ = true;
+    st_.failedTrialsThisCall = 0;
+    ignitionFailLatched_ = false;
+  }
 
   // Phase.
   Phase phase;
@@ -142,7 +220,8 @@ uint32_t Model::update(const Inputs& in, uint32_t nowMs) {
 
   // Alerts.
   uint32_t a = 0;
-  if (in.w1 && !valveSeenThisCall_ && elapsedS(nowMs, w1SinceMs_) >= s_.ignitionTimeoutS) a |= ALERT_IGNITION_FAILURE;
+  if (in.w1 && !valveSeenThisCall_ && elapsedS(nowMs, w1SinceMs_) >= s_.ignitionTimeoutS) ignitionFailLatched_ = true;
+  if (ignitionFailLatched_) a |= ALERT_IGNITION_FAILURE;
 
   if (valve && !in.w1) {
     if (!noCallValve_) noCallValveSinceMs_ = nowMs;
@@ -165,6 +244,7 @@ uint32_t Model::update(const Inputs& in, uint32_t nowMs) {
     a |= ALERT_FLUE_NO_RISE;
   if (in.sensorFault) a |= ALERT_SENSOR_FAULT;
   if (in.boardCode >= 2) a |= ALERT_BOARD_FAULT;
+  if (in.coAlarm) a |= ALERT_CO_ALARM;
 
   raised_ = a & ~st_.alerts;
   if (raised_) events |= 1u << (int)Event::AlertRaised;
