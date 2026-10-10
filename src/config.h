@@ -11,7 +11,7 @@ struct Config {
   String hostname = "furnace-co16";
   String wifiSsid;      // optional fallback when Ethernet has no link
   String wifiPass;
-  String tz = "CST6CDT,M3.2.0,M11.1.0";  // POSIX TZ string
+  String tz = "PST8PDT,M3.2.0,M11.1.0";  // POSIX TZ string
   String ntpServer = "pool.ntp.org";
 
   // MQTT

@@ -45,7 +45,7 @@ After the first flash, updates can go through the web page (Settings, Firmware u
 
 1. Plug Ethernet into the CO16. It gets an address by DHCP and answers at `http://furnace-co16.local/`.
 2. With no Ethernet (and no Wi-Fi configured) it opens a `furnace-setup` access point after a minute; browse to `http://192.168.4.1/`.
-3. Open Settings (default login `admin` / `furnace`, change it), set the MQTT broker, and save. The board restarts and appears in Home Assistant as **Furnace**.
+3. Open Settings (default login `admin` / `furnace`, change it), pick your time zone, set the MQTT broker, and save. The board restarts and appears in Home Assistant as **Furnace**.
 
 ## MQTT
 

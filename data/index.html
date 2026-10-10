@@ -53,7 +53,7 @@
   td { padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
   td.time { color: var(--muted); white-space: nowrap; width: 1%; padding-right: 12px; }
   form label { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: center; margin-bottom: 8px; font-size: 14px; }
-  input { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); width: 100%; }
+  input, select { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); width: 100%; }
   fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 0 0 16px; padding: 12px; }
   legend { color: var(--muted); font-size: 13px; padding: 0 4px; }
   .btn { font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--ink); background: var(--ink); color: var(--bg); cursor: pointer; }
@@ -406,6 +406,34 @@ async function loadEvents() {
 
 // Settings: built from the config JSON so new fields appear automatically.
 const SECRETS = ["wifiPass", "mqttPass", "webPass"];
+// POSIX TZ strings the ESP32 understands, with daylight saving rules.
+const TIME_ZONES = [
+  ["US Eastern", "EST5EDT,M3.2.0,M11.1.0"],
+  ["US Central", "CST6CDT,M3.2.0,M11.1.0"],
+  ["US Mountain", "MST7MDT,M3.2.0,M11.1.0"],
+  ["US Mountain, Arizona (no DST)", "MST7"],
+  ["US Pacific", "PST8PDT,M3.2.0,M11.1.0"],
+  ["US Alaska", "AKST9AKDT,M3.2.0,M11.1.0"],
+  ["US Hawaii", "HST10"],
+  ["Canada Atlantic", "AST4ADT,M3.2.0,M11.1.0"],
+  ["Canada Newfoundland", "NST3:30NDT,M3.2.0,M11.1.0"],
+  ["UTC", "UTC0"],
+  ["UK and Ireland", "GMT0BST,M3.5.0/1,M10.5.0"],
+  ["Central Europe", "CET-1CEST,M3.5.0,M10.5.0/3"],
+  ["Eastern Europe", "EET-2EEST,M3.5.0/3,M10.5.0/4"],
+  ["India", "IST-5:30"],
+  ["Japan", "JST-9"],
+  ["Australia Eastern", "AEST-10AEDT,M10.1.0,M4.1.0/3"],
+  ["Australia Queensland", "AEST-10"],
+  ["Australia Western", "AWST-8"],
+  ["New Zealand", "NZST-12NZDT,M9.5.0,M4.1.0/3"],
+];
+const attr = (s) => String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+const tzSelect = (v) => {
+  const opts = TIME_ZONES.some(([, tz]) => tz === v) ? TIME_ZONES : [...TIME_ZONES, [`Custom (${v})`, v]];
+  return `<label>Time zone<select name="tz">${opts.map(([name, tz]) =>
+    `<option value="${attr(tz)}" ${tz === v ? "selected" : ""}>${attr(name)}</option>`).join("")}</select></label>`;
+};
 async function loadSettings() {
   const r = await fetch("/api/config");
   if (!r.ok) { $("settingsForm").innerHTML = "<p>Sign in to change settings: open <a href='/api/config'>this link</a>, enter the web login, then come back and reopen Settings.</p>"; return; }
@@ -414,7 +442,7 @@ async function loadSettings() {
     ? `<label>${k}<input type="checkbox" name="${path}" ${v ? "checked" : ""} data-bool="true" style="width:auto"></label>`
     : `<label>${k}<input name="${path}" value="${v ?? ""}" ${typeof v === "number" ? 'inputmode="decimal"' : ""} data-num="${typeof v === "number"}"></label>`;
   let html = "<fieldset><legend>Settings</legend>";
-  for (const [k, v] of Object.entries(cfg)) if (k !== "model") html += field(k, v, k);
+  for (const [k, v] of Object.entries(cfg)) if (k !== "model") html += k === "tz" ? tzSelect(v) : field(k, v, k);
   for (const k of SECRETS) html += `<label>${k}<input type="password" name="${k}" placeholder="unchanged"></label>`;
   html += "</fieldset><fieldset><legend>Furnace model</legend>";
   for (const [k, v] of Object.entries(cfg.model)) html += field(k, v, `model.${k}`);
@@ -424,7 +452,7 @@ async function loadSettings() {
 $("settingsForm").onsubmit = async (e) => {
   e.preventDefault();
   const out = { model: {} };
-  for (const el of e.target.querySelectorAll("input")) {
+  for (const el of e.target.querySelectorAll("input, select")) {
     const v = el.dataset.bool ? el.checked : el.dataset.num === "true" ? Number(el.value) : el.value;
     if (el.name.startsWith("model.")) out.model[el.name.slice(6)] = v; else out[el.name] = v;
   }
