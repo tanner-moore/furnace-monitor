@@ -1,5 +1,5 @@
 // The acquisition task: reads the CO16, runs the furnace model and keeps
-// history and an event log. Everything else reads from here.
+// history, burner cycles and an event log. Everything else reads from here.
 #pragma once
 
 #include <Arduino.h>
@@ -18,12 +18,35 @@ struct Snapshot {
   float ledVolts = NAN;
   uint16_t rawInputs = 0;  // DI1 = bit 0
   bool inputsOk = false;
+  bool sdOk = false;
+  uint32_t filterChangedEpoch = 0;  // 0 = never recorded
+  uint32_t lastCycleEpoch = 0;      // when lastCycle ended, 0 = none since boot
 };
 
 struct Event {
   uint32_t seq;
   time_t epoch;
   char text[72];
+};
+
+struct CycleRecord {
+  uint32_t seq;    // 1, 2, ... since boot (restored cycles are 0)
+  uint32_t epoch;  // when the cycle ended
+  furnace::CycleStats stats;
+};
+
+// Raw readings for checking the wiring and calibration on the bench.
+struct Bench {
+  uint16_t inputs = 0;
+  bool inputsOk = false;
+  float aiVolts[16];
+  float rtdOhms[4];
+  float rtdC[4];
+  uint8_t rtdFault[4];
+  float ledVolts = NAN;
+  bool ledLit = false;
+  uint32_t ledOnMs = 0, ledOffMs = 0;
+  int boardCode = 0;
 };
 
 // Starts the acquisition task. Call after config is loaded.
@@ -38,9 +61,22 @@ void stateJson(const Snapshot& s, JsonObject o);
 // Events newer than afterSeq, oldest first, at most max. Returns count copied.
 size_t eventsAfter(uint32_t afterSeq, Event* out, size_t max);
 
-// Writes history samples from the last `hours` as compact arrays, at most
-// maxPoints rows (older samples are skipped evenly).
+// Writes history samples from the last `hours` (up to 30 days) as compact
+// arrays, at most maxPoints rows (older samples are skipped evenly).
 void historyJson(uint32_t hours, size_t maxPoints, JsonObject o);
+
+// Recent burner cycles, newest first, at most max.
+void cyclesJson(size_t max, JsonArray a);
+
+// Burner cycles with seq above afterSeq, oldest first, for MQTT.
+size_t cyclesAfter(uint32_t afterSeq, CycleRecord* out, size_t max);
+
+// The filter was replaced: restart the blower-hours count.
+void resetFilter();
+
+// Latest bench readings. Calling it keeps bench mode on (every analog input
+// and RTD channel is read) for the next 15 seconds.
+Bench bench();
 
 // Re-reads model settings from config (after the settings page saves).
 void applySettings();

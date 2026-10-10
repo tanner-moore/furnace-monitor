@@ -19,10 +19,11 @@ static constexpr const char* kNodeId = "furnace_co16";
 
 static NetworkClient tcp;
 static PubSubClient mqtt(tcp);
-static String topicAvail, topicState, topicEvent, topicDiscovery, topicHaStatus;
+static String topicAvail, topicState, topicEvent, topicCycle, topicFilterReset, topicDiscovery, topicHaStatus;
 static bool discoveryPending = false;
 static uint32_t lastAttemptMs = 0, lastPublishMs = 0;
 static uint32_t lastEventSeq = 0;
+static uint32_t lastCycleSeq = 0;
 static String lastStateJson;
 
 // --- discovery ---------------------------------------------------------------
@@ -96,11 +97,39 @@ static void publishDiscovery() {
   sensor(cmps, "high_fire_min_today", "High fire runtime today", "min", "duration", "total_increasing");
   sensor(cmps, "last_cycle_s", "Last burner cycle", "s", "duration", nullptr);
 
+  // Health of the last burner cycle. A slowly falling rise or a rising motor
+  // current is the early sign of a dirty filter or a tired motor.
+  sensor(cmps, "cycle_ignition_s", "Time to ignition", "s", "duration", "measurement");
+  sensor(cmps, "cycle_rise_low", "Low fire temperature rise", "°C", nullptr, "measurement");
+  sensor(cmps, "cycle_rise_high", "High fire temperature rise", "°C", nullptr, "measurement");
+  sensor(cmps, "cycle_flue_max", "Peak flue temperature", "°C", "temperature", "measurement");
+  sensor(cmps, "cycle_inducer_a", "Inducer current per cycle", "A", "current", "measurement");
+  sensor(cmps, "cycle_blower_a", "Blower current per cycle", "A", "current", "measurement");
+  sensor(cmps, "total_cycles", "Burner cycles", nullptr, nullptr, "total_increasing");
+  sensor(cmps, "total_failed_ignitions", "Failed ignition trials", nullptr, nullptr, "total_increasing");
+  sensor(cmps, "total_burner_h", "Burner runtime", "h", "duration", "total_increasing");
+  sensor(cmps, "total_high_fire_h", "High fire runtime", "h", "duration", "total_increasing");
+  sensor(cmps, "total_blower_h", "Blower runtime", "h", "duration", "total_increasing");
+
+  // Air filter.
+  sensor(cmps, "filter_h", "Filter blower hours", "h", "duration", "measurement");
+  sensor(cmps, "filter_pct", "Filter life left", "%", nullptr, "measurement");
+  binary(cmps, "filter_due", "Filter change due", "problem");
+  JsonObject reset = component(cmps, "filter_reset", "button", "Filter changed");
+  reset["cmd_t"] = topicFilterReset;
+  reset["pl_prs"] = "PRESS";
+
+  if (config.diCo) binary(cmps, "co_alarm", "Carbon monoxide", "carbon_monoxide");
+
   JsonObject board = sensor(cmps, "board_status", "Control board status", nullptr, nullptr, nullptr);
   board["val_tpl"] = "{{ value_json.board_status }}";
   board["ent_cat"] = "diagnostic";
   JsonObject uptime = sensor(cmps, "uptime_s", "Uptime", "s", "duration", nullptr);
   uptime["ent_cat"] = "diagnostic";
+  JsonObject sd = component(cmps, "sd", "binary_sensor", "SD card logging");
+  sd["val_tpl"] = "{{ 'ON' if value_json.sd else 'OFF' }}";
+  sd["dev_cla"] = "running";
+  sd["ent_cat"] = "diagnostic";
 
   String payload;
   serializeJson(doc, payload);
@@ -145,8 +174,39 @@ static void publishEvents() {
   }
 }
 
+static void publishCycles() {
+  monitor::CycleRecord c[4];
+  size_t n;
+  while ((n = monitor::cyclesAfter(lastCycleSeq, c, 4)) > 0) {
+    for (size_t i = 0; i < n; i++) {
+      JsonDocument doc;
+      const furnace::CycleStats& s = c[i].stats;
+      doc["time"] = c[i].epoch;
+      doc["seconds"] = s.seconds;
+      doc["high_fire_s"] = s.highFireSeconds;
+      doc["ignition_s"] = s.ignitionSeconds;
+      auto put = [&](const char* k, float v) {
+        if (isnan(v)) doc[k] = nullptr; else doc[k] = roundf(v * 100) / 100;
+      };
+      put("rise_low", s.riseLowC);
+      put("rise_high", s.riseHighC);
+      put("flue_max", s.flueMaxC);
+      put("inducer_a", s.inducerAmps);
+      put("blower_a", s.blowerAmps);
+      String payload;
+      serializeJson(doc, payload);
+      mqtt.publish(topicCycle.c_str(), payload.c_str());
+      lastCycleSeq = c[i].seq;
+    }
+  }
+}
+
+// The only commands accepted: Home Assistant coming online (resend discovery)
+// and the filter-changed button, which resets a counter. Nothing here can
+// reach the furnace.
 static void onMessage(char* topic, uint8_t* payload, unsigned int len) {
   if (topicHaStatus == topic && len == 6 && memcmp(payload, "online", 6) == 0) discoveryPending = true;
+  if (topicFilterReset == topic && len == 5 && memcmp(payload, "PRESS", 5) == 0) monitor::resetFilter();
 }
 
 static void connect() {
@@ -160,6 +220,7 @@ static void connect() {
   monitor::logEvent("mqtt connected to %s", config.mqttHost.c_str());
   mqtt.publish(topicAvail.c_str(), "online", true);
   mqtt.subscribe(topicHaStatus.c_str());
+  mqtt.subscribe(topicFilterReset.c_str());
   publishDiscovery();
   publishState(true);
 }
@@ -168,9 +229,11 @@ void begin() {
   topicAvail = config.baseTopic + "/availability";
   topicState = config.baseTopic + "/state";
   topicEvent = config.baseTopic + "/event";
+  topicCycle = config.baseTopic + "/cycle";
+  topicFilterReset = config.baseTopic + "/filter_reset";
   topicDiscovery = config.discoveryPrefix + "/device/" + kNodeId + "/config";
   topicHaStatus = config.discoveryPrefix + "/status";
-  mqtt.setBufferSize(8192);
+  mqtt.setBufferSize(12288);
   mqtt.setKeepAlive(30);
   mqtt.setCallback(onMessage);
   // Don't replay events from before the first connection.
@@ -194,6 +257,7 @@ void loop() {
   }
   publishState(millis() - lastPublishMs >= kPeriodicMs);
   publishEvents();
+  publishCycles();
 }
 
 bool connected() { return mqtt.connected(); }

@@ -24,6 +24,9 @@
 #define PIN_RTD_MUX_S1 7  // NX3L4051 select bit 0
 #define PIN_RTD_MUX_S2 21 // NX3L4051 select bit 1 (also wired to MAX31865 DRDY; we drive it, so poll instead)
 #define PIN_LCD_CS 4
+#define PIN_LCD_DC 0
+#define PIN_LCD_RST 5        // shared with the LoRa module's reset (not fitted)
+#define PIN_LCD_BACKLIGHT 40 // shared with the LoRa module's interrupt (not fitted)
 #define PIN_SD_CS 9
 
 // W5500 Ethernet on its own SPI bus.

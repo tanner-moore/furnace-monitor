@@ -58,6 +58,23 @@
   legend { color: var(--muted); font-size: 13px; padding: 0 4px; }
   .btn { font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--ink); background: var(--ink); color: var(--bg); cursor: pointer; }
   .note { color: var(--muted); font-size: 13px; }
+  .btn.small { padding: 4px 10px; font-size: 13px; }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin-top: 8px; }
+  .bar i { display: block; height: 100%; background: var(--ok); }
+  .bar.due i { background: var(--bad); }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button { background: none; border: 0; padding: 6px 12px; font: inherit; color: var(--muted); cursor: pointer; }
+  .seg button.active { background: var(--ink); color: var(--bg); }
+  th { text-align: left; font-weight: 500; color: var(--muted); padding: 6px 4px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .scroll { overflow-x: auto; }
+  .di { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
+  .di div { text-align: center; padding: 6px 2px; border-radius: 6px; border: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+  .di div.on { background: var(--on-bg); color: var(--on); border-color: var(--on); font-weight: 600; }
+  .di small { display: block; font-size: 11px; }
+  .bad { color: var(--bad); } .good { color: var(--ok); }
+  @media (max-width: 640px) { .di { grid-template-columns: repeat(4, 1fr); } }
 </style>
 </head>
 <body>
@@ -68,7 +85,9 @@
 <nav>
   <button data-tab="live" class="active">Live</button>
   <button data-tab="history">History</button>
+  <button data-tab="cycles">Cycles</button>
   <button data-tab="events">Events</button>
+  <button data-tab="bench">Bench</button>
   <button data-tab="settings">Settings</button>
 </nav>
 <main>
@@ -94,10 +113,26 @@
       <div class="card tile"><div class="label">High fire today</div><div class="value" id="high_fire_min_today">–</div></div>
       <div class="card tile"><div class="label">Control board</div><div class="value" style="font-size:16px" id="board_status">–</div></div>
     </div>
+    <div class="grid four">
+      <div class="card tile"><div class="label">Last cycle: ignition</div><div class="value" id="cycle_ignition_s">–</div></div>
+      <div class="card tile"><div class="label">Last cycle: low fire rise</div><div class="value" id="cycle_rise_low">–</div></div>
+      <div class="card tile"><div class="label">Last cycle: high fire rise</div><div class="value" id="cycle_rise_high">–</div></div>
+      <div class="card tile"><div class="label">Last cycle: blower</div><div class="value" id="cycle_blower_a">–</div></div>
+    </div>
+    <div class="card">
+      <div class="row">
+        <div><strong>Air filter</strong> <span class="note" id="filterText">–</span></div>
+        <button class="btn small" id="filterReset">Filter changed</button>
+      </div>
+      <div class="bar" id="filterBar"><i style="width:0"></i></div>
+    </div>
   </section>
 
   <section id="history">
     <div class="card">
+      <div class="seg" id="range" style="margin-bottom:12px">
+        <button data-h="24" class="active">24 h</button><button data-h="168">7 days</button><button data-h="720">30 days</button>
+      </div>
       <canvas id="chart"></canvas>
       <div class="legend">
         <span><i style="background:var(--supply)"></i>Supply</span>
@@ -106,11 +141,42 @@
         <span><i style="background:var(--on-bg);height:10px;border:1px solid var(--on)"></i>Burner on</span>
       </div>
     </div>
-    <p class="note">Last 24 hours, kept on the board. Home Assistant keeps the long-term history.</p>
+    <p class="note">5-second samples for the last day and one-minute averages for 30 days, kept on the board and reloaded from the SD card after a restart.</p>
+  </section>
+
+  <section id="cycles">
+    <div class="card">
+      <canvas id="cycleChart"></canvas>
+      <div class="legend">
+        <span><i style="background:var(--supply)"></i>Low fire rise</span>
+        <span><i style="background:var(--flue)"></i>High fire rise</span>
+        <span><i style="background:var(--return)"></i>Blower current (right axis)</span>
+      </div>
+    </div>
+    <p class="note">Each point is one burner cycle. A rise that drifts down over weeks, or blower current that creeps up, usually means a dirty filter or a tired motor. The Trane rating plate gives the allowed rise range.</p>
+    <div class="card scroll"><table id="cycleTable"></table></div>
   </section>
 
   <section id="events">
     <div class="card"><table id="eventTable"></table></div>
+  </section>
+
+  <section id="bench">
+    <p class="note">Raw readings for checking wiring and calibration. While this tab is open the board also reads every analog input and every PT100 channel.</p>
+    <div class="card"><p><strong>Digital inputs</strong> <span class="note" id="benchInputsOk"></span></p><div class="di" id="benchDi"></div></div>
+    <div class="card scroll"><p><strong>Analog inputs</strong></p><table id="benchAi"></table></div>
+    <div class="card scroll"><p><strong>PT100 channels</strong></p><table id="benchRtd"></table>
+      <p class="note">A healthy PT100 reads about 108 Ω at room temperature. Touch each probe to see which channel moves.</p></div>
+    <div class="card"><p><strong>Control board LED</strong></p><table id="benchLed"></table></div>
+    <div class="card">
+      <p><strong>Current transformer scaling</strong></p>
+      <p class="note">With the motor running, read its current with a clamp meter and enter it here.</p>
+      <label style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center;margin-bottom:8px">Motor
+        <select id="ctWhich" style="font:inherit;padding:6px"><option value="inducer">Inducer</option><option value="blower">Blower</option></select></label>
+      <label style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center">Clamp meter amps <input id="ctAmps" inputmode="decimal"></label>
+      <p id="ctResult" class="note"></p>
+    </div>
+    <div class="card"><p><strong>Board chips</strong></p><div class="lamps" id="benchChips"></div></div>
   </section>
 
   <section id="settings">
@@ -135,7 +201,7 @@ const PHASES = [
 const LAMPS = [
   ["heat_call", "W1 call"], ["heat_call_2", "W2 call"], ["fan_call", "Fan call"], ["inducer", "Inducer"],
   ["inducer_high", "Inducer high"], ["burner", "Gas valve"], ["high_fire", "High fire"], ["flame", "Flame"],
-  ["blower", "Blower"],
+  ["blower", "Blower"], ["co_alarm", "CO alarm"],
 ];
 const $ = (id) => document.getElementById(id);
 const fmt = (v, unit, d = 1) => v === null || v === undefined ? "–" : `${v.toFixed(d)}<span class="unit"> ${unit}</span>`;
@@ -160,10 +226,21 @@ function render(s) {
   $("burner_min_today").innerHTML = fmt(s.burner_min_today, "min", 0);
   $("high_fire_min_today").innerHTML = fmt(s.high_fire_min_today, "min", 0);
   $("board_status").textContent = s.board_status;
+  document.querySelector('[data-l="co_alarm"]').hidden = !s.co_fitted;
+  $("cycle_ignition_s").innerHTML = fmt(s.cycle_ignition_s, "s", 0);
+  $("cycle_rise_low").innerHTML = fmt(rise(s.cycle_rise_low), tUnit);
+  $("cycle_rise_high").innerHTML = fmt(rise(s.cycle_rise_high), tUnit);
+  $("cycle_blower_a").innerHTML = fmt(s.cycle_blower_a, "A", 1);
+  const life = s.filter_life_h, used = s.filter_h ?? 0;
+  $("filterText").textContent = life
+    ? `${used.toFixed(0)} of ${life} blower hours${s.filter_due ? " · change it now" : ""}${s.filter_changed ? ` · changed ${new Date(s.filter_changed * 1000).toLocaleDateString()}` : ""}`
+    : `${used.toFixed(0)} blower hours`;
+  $("filterBar").classList.toggle("due", !!s.filter_due);
+  $("filterBar").firstElementChild.style.width = `${life ? Math.min(100, 100 * used / life) : 0}%`;
   const alert = $("alert");
   alert.hidden = !s.problem;
   alert.textContent = s.problem ? `Problem: ${s.alerts.replaceAll("_", " ").replaceAll(",", ", ")}` : "";
-  $("meta").textContent = `${s.link} ${s.ip} · MQTT ${s.mqtt ? "connected" : "off"} · up ${Math.floor(s.uptime_s / 3600)} h`;
+  $("meta").textContent = `${s.link} ${s.ip} · MQTT ${s.mqtt ? "connected" : "off"} · SD ${s.sd ? "logging" : "off"} · up ${Math.floor(s.uptime_s / 3600)} h`;
 }
 
 function connect() {
@@ -173,21 +250,42 @@ function connect() {
 }
 connect();
 
+$("filterReset").onclick = async () => {
+  if (!confirm("Record a new filter and restart its blower-hours count?")) return;
+  const r = await fetch("/api/filter/reset", { method: "POST" });
+  alert(r.ok ? "Filter count reset." : "Sign in first: open Settings, then try again.");
+};
+
 // Tabs
+let benchTimer = null;
 document.querySelectorAll("nav button").forEach((b) => b.onclick = () => {
   document.querySelectorAll("nav button, section").forEach((el) => el.classList.remove("active"));
   b.classList.add("active");
   $(b.dataset.tab).classList.add("active");
-  ({ history: loadHistory, events: loadEvents, settings: loadSettings })[b.dataset.tab]?.();
+  clearInterval(benchTimer);
+  ({ history: loadHistory, cycles: loadCycles, events: loadEvents, bench: startBench, settings: loadSettings })[b.dataset.tab]?.();
 });
 
-// History chart
-async function loadHistory() {
-  const h = await (await fetch("/api/history?hours=24")).json();
-  const c = $("chart"), ctx = c.getContext("2d"), dpr = devicePixelRatio || 1;
+function setupCanvas(c) {
+  const ctx = c.getContext("2d"), dpr = devicePixelRatio || 1;
   c.width = c.clientWidth * dpr; c.height = c.clientHeight * dpr; ctx.scale(dpr, dpr);
+  const css = getComputedStyle(document.documentElement);
+  return { ctx, W: c.clientWidth, H: c.clientHeight, col: (n) => css.getPropertyValue(n).trim() };
+}
+const timeLabel = (t, days) => new Date(t * 1000).toLocaleString([], days ? { month: "short", day: "numeric" } : { hour: "numeric", minute: "2-digit" });
+
+// History chart
+let historyHours = 24;
+document.querySelectorAll("#range button").forEach((b) => b.onclick = () => {
+  document.querySelectorAll("#range button").forEach((x) => x.classList.toggle("active", x === b));
+  historyHours = Number(b.dataset.h);
+  loadHistory();
+});
+async function loadHistory() {
+  const h = await (await fetch(`/api/history?hours=${historyHours}`)).json();
+  const c = $("chart");
+  const { ctx, col } = setupCanvas(c);
   const W = c.clientWidth, H = c.clientHeight, L = 40, B = 20;
-  const css = getComputedStyle(document.documentElement), col = (n) => css.getPropertyValue(n).trim();
   ctx.clearRect(0, 0, W, H);
   if (!h.t.length) { ctx.fillStyle = col("--muted"); ctx.fillText("No history yet", L, 20); return; }
   const series = [["supply", "--supply"], ["return", "--return"], ["flue", "--flue"]];
@@ -202,8 +300,7 @@ async function loadHistory() {
     ctx.fillText(`${v}${tUnit}`, 0, y(v) + 4);
   }
   for (let i = 0; i < n; i += Math.ceil(n / 6)) {
-    const d = new Date(h.t[i] * 1000);
-    if (h.t[i]) ctx.fillText(d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }), x(i), H - 4);
+    if (h.t[i]) ctx.fillText(timeLabel(h.t[i], historyHours > 24), x(i), H - 4);
   }
   ctx.lineWidth = 2;
   for (const [k, c] of series) {
@@ -212,6 +309,91 @@ async function loadHistory() {
     ctx.stroke();
   }
 }
+
+// Burner cycles
+async function loadCycles() {
+  const cy = await (await fetch("/api/cycles")).json();
+  const n0 = (v, d = 1) => v === null || v === undefined ? "–" : v.toFixed(d);
+  const mins = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  $("cycleTable").innerHTML = "<tr><th>Ended</th><th class=num>Length</th><th class=num>High fire</th><th class=num>Ignition</th>" +
+    `<th class=num>Low rise</th><th class=num>High rise</th><th class=num>Peak flue</th><th class=num>Inducer</th><th class=num>Blower</th></tr>` +
+    (cy.map((c) => `<tr><td class="time">${c.time ? new Date(c.time * 1000).toLocaleString() : "–"}</td>` +
+      `<td class=num>${mins(c.seconds)}</td><td class=num>${mins(c.high_fire_s)}</td><td class=num>${c.ignition_s} s</td>` +
+      `<td class=num>${n0(rise(c.rise_low))}</td><td class=num>${n0(rise(c.rise_high))}</td><td class=num>${n0(temp(c.flue_max), 0)}</td>` +
+      `<td class=num>${n0(c.inducer_a, 2)}</td><td class=num>${n0(c.blower_a, 2)}</td></tr>`).join("") ||
+      "<tr><td colspan=9>No burner cycles yet</td></tr>");
+
+  const c = $("cycleChart");
+  const { ctx, W, H, col } = setupCanvas(c);
+  const L = 40, R = 40, B = 20, pts = cy.slice().reverse();
+  ctx.clearRect(0, 0, W, H);
+  ctx.font = "11px system-ui";
+  if (!pts.length) { ctx.fillStyle = col("--muted"); ctx.fillText("No burner cycles yet", L, 20); return; }
+  const rises = pts.flatMap((p) => [p.rise_low, p.rise_high]).filter((v) => v !== null).map(rise);
+  const amps = pts.map((p) => p.blower_a).filter((v) => v !== null);
+  const lo = rises.length ? Math.floor(Math.min(...rises) / 5) * 5 - 5 : 0, hi = rises.length ? Math.ceil(Math.max(...rises) / 5) * 5 + 5 : 10;
+  const ahi = amps.length ? Math.ceil(Math.max(...amps) + 1) : 10;
+  const n = pts.length, x = (i) => L + (W - L - R) * (n === 1 ? 0.5 : i / (n - 1));
+  const y = (v) => (H - B) - (H - B - 8) * (v - lo) / Math.max(1, hi - lo), ya = (v) => (H - B) - (H - B - 8) * v / ahi;
+  ctx.strokeStyle = col("--line"); ctx.fillStyle = col("--muted");
+  for (let v = lo; v <= hi; v += 5) { ctx.beginPath(); ctx.moveTo(L, y(v)); ctx.lineTo(W - R, y(v)); ctx.stroke(); ctx.fillText(`${v}${tUnit}`, 0, y(v) + 4); }
+  for (let a = 0; a <= ahi; a += Math.max(1, Math.round(ahi / 5))) ctx.fillText(`${a} A`, W - R + 6, ya(a) + 4);
+  for (let i = 0; i < n; i += Math.max(1, Math.ceil(n / 5))) if (pts[i].time) ctx.fillText(timeLabel(pts[i].time, true), x(i), H - 4);
+  const dots = (key, color, yf, conv = (v) => v) => {
+    ctx.fillStyle = col(color);
+    pts.forEach((p, i) => { if (p[key] !== null) { ctx.beginPath(); ctx.arc(x(i), yf(conv(p[key])), 3, 0, 7); ctx.fill(); } });
+  };
+  dots("rise_low", "--supply", y, rise);
+  dots("rise_high", "--flue", y, rise);
+  dots("blower_a", "--return", ya);
+}
+
+// Bench: raw readings, refreshed every second while the tab is open.
+const DI_NAMES = { diW1: "W1", diW2: "W2", diG: "G", diMvl: "MVL", diMvh: "MVH", diCo: "CO" };
+const AI_NAMES = { aiInducer: "Inducer CT", aiBlower: "Blower CT", aiLed: "LED sensor" };
+const RTD_NAMES = { rtdSupply: "Supply", rtdReturn: "Return", rtdFlue: "Flue", rtdSpare: "Spare" };
+const RTD_FAULTS = [[0x80, "RTD high"], [0x40, "RTD low"], [0x20, "REFIN high"], [0x10, "REFIN low"], [0x08, "RTDIN low"], [0x04, "over/under voltage"]];
+let lastBench = null;
+const roleOf = (names, cfg, n) => Object.entries(names).filter(([k]) => cfg[k] === n).map(([, v]) => v).join(", ");
+function startBench() { loadBench(); benchTimer = setInterval(loadBench, 1000); }
+async function loadBench() {
+  const b = lastBench = await (await fetch("/api/bench")).json();
+  const cfg = b.config;
+  $("benchInputsOk").innerHTML = b.inputs_ok ? "" : '<span class="bad">input chip not answering</span>';
+  $("benchDi").innerHTML = Array.from({ length: 16 }, (_, i) =>
+    `<div class="${b.inputs >> i & 1 ? "on" : ""}">DI ${i + 1}<small>${roleOf(DI_NAMES, cfg, i + 1) || "&nbsp;"}</small></div>`).join("");
+  $("benchAi").innerHTML = "<tr><th>Input</th><th>Used for</th><th class=num>Volts</th><th class=num>Scaled</th></tr>" +
+    b.ai_v.map((v, i) => {
+      const role = roleOf(AI_NAMES, cfg, i + 1);
+      const scale = cfg.aiInducer === i + 1 ? cfg.inducerAmpsPerVolt : cfg.aiBlower === i + 1 ? cfg.blowerAmpsPerVolt : null;
+      const scaled = v === null ? "–" : scale ? `${(v * scale).toFixed(2)} A` : cfg.aiLed === i + 1 ? (v >= cfg.ledOnVolts ? "lit" : "dark") : "";
+      return `<tr><td>AI ${i + 1}</td><td>${role}</td><td class=num>${v === null ? "–" : v.toFixed(3)}</td><td class=num>${scaled}</td></tr>`;
+    }).join("");
+  $("benchRtd").innerHTML = "<tr><th>Channel</th><th>Used for</th><th class=num>Ohms</th><th class=num>Temp</th><th>Fault</th></tr>" +
+    b.rtd.map((r, i) => {
+      const faults = RTD_FAULTS.filter(([bit]) => r.fault & bit).map(([, n]) => n).join(", ");
+      return `<tr><td>PT100 ${i + 1}</td><td>${roleOf(RTD_NAMES, cfg, i + 1)}</td><td class=num>${r.ohms === null ? "–" : r.ohms.toFixed(2)}</td>` +
+        `<td class=num>${r.c === null ? "–" : `${temp(r.c).toFixed(1)} ${tUnit}`}</td><td class="${faults ? "bad" : ""}">${faults || (r.ohms === null ? "" : "none")}</td></tr>`;
+    }).join("");
+  const l = b.led;
+  $("benchLed").innerHTML = `<tr><td>Sensor</td><td class=num>${l.v === null ? "not fitted" : `${l.v.toFixed(3)} V (${l.lit ? "lit" : "dark"}, threshold ${cfg.ledOnVolts} V)`}</td></tr>` +
+    `<tr><td>Last lit period</td><td class=num>${l.on_ms} ms</td></tr><tr><td>Last dark period</td><td class=num>${l.off_ms} ms</td></tr>` +
+    `<tr><td>Decoded</td><td class=num>${l.code === 0 ? "normal" : l.code === 99 ? "steady on" : `${l.code} flashes`}</td></tr>`;
+  const chip = (name, ok) => `<span class="lamp ${ok ? "" : "bad"}">${name}: ${ok ? "ok" : "missing"}</span>`;
+  $("benchChips").innerHTML = chip("Relay expander", b.chips.relays) + chip("Input expander", b.chips.inputs) +
+    b.chips.adc.map((ok, i) => chip(`ADC AI ${i * 4 + 1}-${i * 4 + 4}`, ok)).join("") + chip("PT100 reader", b.chips.rtd) + chip("SD card", b.chips.sd);
+  updateCt();
+}
+function updateCt() {
+  const b = lastBench, amps = Number($("ctAmps").value);
+  if (!b || !amps) { $("ctResult").textContent = ""; return; }
+  const which = $("ctWhich").value, input = b.config[which === "inducer" ? "aiInducer" : "aiBlower"];
+  const v = input ? b.ai_v[input - 1] : null;
+  $("ctResult").textContent = !input ? "That CT is not assigned to an input in Settings." : !v ? "No voltage from the CT yet." :
+    `Set ${which}AmpsPerVolt to ${(amps / v).toFixed(3)} in Settings (now ${b.config[`${which}AmpsPerVolt`]}).`;
+}
+$("ctAmps").oninput = updateCt;
+$("ctWhich").onchange = updateCt;
 
 // Events
 async function loadEvents() {
@@ -228,7 +410,9 @@ async function loadSettings() {
   const r = await fetch("/api/config");
   if (!r.ok) { $("settingsForm").innerHTML = "<p>Sign in to change settings: open <a href='/api/config'>this link</a>, enter the web login, then come back and reopen Settings.</p>"; return; }
   const cfg = await r.json();
-  const field = (k, v, path) => `<label>${k}<input name="${path}" value="${v ?? ""}" ${typeof v === "number" ? 'inputmode="decimal"' : ""} data-num="${typeof v === "number"}"></label>`;
+  const field = (k, v, path) => typeof v === "boolean"
+    ? `<label>${k}<input type="checkbox" name="${path}" ${v ? "checked" : ""} data-bool="true" style="width:auto"></label>`
+    : `<label>${k}<input name="${path}" value="${v ?? ""}" ${typeof v === "number" ? 'inputmode="decimal"' : ""} data-num="${typeof v === "number"}"></label>`;
   let html = "<fieldset><legend>Settings</legend>";
   for (const [k, v] of Object.entries(cfg)) if (k !== "model") html += field(k, v, k);
   for (const k of SECRETS) html += `<label>${k}<input type="password" name="${k}" placeholder="unchanged"></label>`;
@@ -241,7 +425,7 @@ $("settingsForm").onsubmit = async (e) => {
   e.preventDefault();
   const out = { model: {} };
   for (const el of e.target.querySelectorAll("input")) {
-    const v = el.dataset.num === "true" ? Number(el.value) : el.value;
+    const v = el.dataset.bool ? el.checked : el.dataset.num === "true" ? Number(el.value) : el.value;
     if (el.name.startsWith("model.")) out.model[el.name.slice(6)] = v; else out[el.name] = v;
   }
   const r = await fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(out) });

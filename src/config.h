@@ -28,6 +28,8 @@ struct Config {
 
   // Digital inputs (1-16, 0 = not wired)
   uint8_t diW1 = 1, diW2 = 2, diG = 4, diMvl = 5, diMvh = 6;
+  uint8_t diCo = 0;      // CO alarm relay contact (DI 3 suggested)
+  bool coOnOpen = false; // true when the contact opens on alarm (NC wiring)
 
   // Analog inputs (1-16, 0 = not wired) and scaling
   uint8_t aiInducer = 1, aiBlower = 2, aiLed = 3;
@@ -38,6 +40,16 @@ struct Config {
   // PT100 channels (1-4, 0 = not fitted) and calibration offsets
   uint8_t rtdSupply = 1, rtdReturn = 2, rtdFlue = 3, rtdSpare = 0;
   float offsetSupply = 0, offsetReturn = 0, offsetFlue = 0, offsetSpare = 0;
+
+  // Air filter: blower hours between changes.
+  uint16_t filterLifeHours = 500;
+
+  // SD card logging (minute samples, cycles and events) and the built-in screen.
+  bool sdLogging = true;
+  bool display = true;
+  uint16_t displayWidth = 240, displayHeight = 240;  // ST7789 panel size, to confirm on the board
+  uint8_t displayRotation = 0;                      // 0-3
+  bool displayFahrenheit = true;
 
   furnace::Settings model;
 

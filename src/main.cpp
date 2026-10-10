@@ -8,6 +8,7 @@
 #include <LittleFS.h>
 
 #include "config.h"
+#include "display.h"
 #include "ha_mqtt.h"
 #include "monitor.h"
 #include "net.h"
@@ -25,6 +26,7 @@ void setup() {
   net::begin();
   ha_mqtt::begin();
   web::begin();
+  display::begin();
 
   // Restart if the main loop stalls.
   enableLoopWDT();
