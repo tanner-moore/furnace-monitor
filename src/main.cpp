@@ -19,6 +19,10 @@ void setup() {
 
   if (!LittleFS.begin(true)) log_e("LittleFS mount failed");
   if (!config.load()) log_w("no saved settings, using defaults");
+  // Apply the time zone before anything reads local time (day counters, SD log
+  // file names, the screen). net::begin() sets it again along with NTP.
+  setenv("TZ", config.tz.c_str(), 1);
+  tzset();
 
   monitor::begin();  // also forces the relays off
   monitor::logEvent("boot");
