@@ -82,7 +82,7 @@ The built-in ST7789 shows the phase, temperatures, any alert, today's cycles, fi
 - `src/co16_io.*`: drivers for the XL9555 inputs, ADS1115 ADCs, MAX31865 RTD reader and the relay all-off
 - `src/monitor.*`: acquisition task, history (24 h of 5 s samples and 30 days of minute averages in PSRAM), burner cycles and event log
 - `src/sdlog.*`: SD card logging and reading it back at boot
-- `src/display.*`: the built-in screen
+- `src/display.*`, `src/st7789.*`: the built-in screen and a small ST7789 driver
 - `src/ha_mqtt.*`, `src/web.*`, `src/net.*`: MQTT with discovery, web server, Ethernet / Wi-Fi / NTP
 - `data/index.html`: the dashboard
 

@@ -1,7 +1,6 @@
 #include "display.h"
 
 #include <Adafruit_GFX.h>
-#include <Adafruit_ST7789.h>
 #include <SPI.h>
 
 #include "co16_io.h"
@@ -9,6 +8,7 @@
 #include "monitor.h"
 #include "net.h"
 #include "pins.h"
+#include "st7789.h"
 
 namespace display {
 
@@ -16,7 +16,7 @@ namespace display {
 static constexpr uint16_t kBg = 0x0000, kInk = 0xFFFF, kMuted = 0x8410, kOn = 0xFC60, kBad = 0xF800,
                           kOk = 0x07E0;
 
-static Adafruit_ST7789* tft;
+static St7789* tft;
 static GFXcanvas16* canvas;  // drawn off-screen, then sent in one go (no flicker)
 
 static const char* phaseLabel(furnace::Phase p) {
@@ -123,7 +123,7 @@ void begin() {
 
   pinMode(PIN_LCD_BACKLIGHT, OUTPUT);
   digitalWrite(PIN_LCD_BACKLIGHT, HIGH);
-  tft = new Adafruit_ST7789(&SPI, PIN_LCD_CS, PIN_LCD_DC, PIN_LCD_RST);
+  tft = new St7789(&SPI, PIN_LCD_CS, PIN_LCD_DC, PIN_LCD_RST);
   co16::spiLock();
   tft->init(config.displayWidth, config.displayHeight);
   tft->setRotation(config.displayRotation);
