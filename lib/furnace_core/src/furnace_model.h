@@ -38,6 +38,7 @@ enum Alert : uint32_t {
   ALERT_FLUE_NO_RISE = 1u << 7,       // firing but flue temperature not rising
   ALERT_SENSOR_FAULT = 1u << 8,       // a configured sensor reads invalid
   ALERT_BOARD_FAULT = 1u << 9,        // control board LED shows a fault code
+  ALERT_CO_ALARM = 1u << 10,          // the CO alarm's relay contact reports CO
 };
 
 // Writes a comma-separated list of alert names into buf. Returns buf.
@@ -55,6 +56,7 @@ struct Inputs {
   float supplyC = NAN;
   float returnC = NAN;
   float flueC = NAN;
+  bool coAlarm = false;      // CO alarm relay contact, when one is wired
   bool sensorFault = false;  // set by the driver when an RTD/ADC reports a fault
   int boardCode = 0;         // 0 = normal/unknown, else flash count (or 99 = steady on)
 };
@@ -65,12 +67,37 @@ struct Settings {
   float blowerOnAmps = 1.0f;       // above this the blower counts as running
   uint32_t flameConfirmS = 5;      // valve held this long = board has proven flame
   uint32_t ignitionTimeoutS = 90;  // W1 without valve for this long = ignition failure
+  uint32_t ignitionTrials = 2;     // this many failed trials (valve opened, no flame) = ignition failure
   uint32_t shortCycleS = 180;      // burner cycles shorter than this are short cycles
   uint32_t blowerDelayS = 90;      // allowed time from flame to blower current (board: 45 s)
   uint32_t settleS = 300;          // firing time before delta-T and flue checks apply
   float minDeltaTC = 15.0f;        // supply minus return while firing
   float maxSupplyC = 85.0f;        // supply air limit
   float minFlueRiseC = 10.0f;      // flue rise expected after settleS of firing
+  uint32_t riseSettleS = 180;      // time on a stage before its temperature rise is averaged
+};
+
+// Figures for one burner cycle (valve open with proven flame until valve close).
+// Averages are NaN when the sensor is not fitted or the stage never settled.
+struct CycleStats {
+  uint32_t seconds = 0;
+  uint32_t highFireSeconds = 0;
+  uint32_t ignitionSeconds = 0;  // heat call start to gas valve open
+  float riseLowC = NAN;          // average supply-return rise on settled low fire
+  float riseHighC = NAN;         // same on settled high fire
+  float flueMaxC = NAN;
+  float inducerAmps = NAN;       // average while firing
+  float blowerAmps = NAN;        // average while firing with the blower running
+};
+
+// Running totals that outlive a day; the caller persists them.
+struct Totals {
+  uint32_t cycles = 0;
+  uint32_t failedTrials = 0;     // valve openings that never proved flame
+  uint32_t burnerSeconds = 0;
+  uint32_t highFireSeconds = 0;
+  uint32_t blowerSeconds = 0;
+  uint32_t filterBlowerSeconds = 0;  // blower time since the filter was last changed
 };
 
 struct State {
@@ -87,10 +114,14 @@ struct State {
   uint32_t burnerSecondsToday = 0;
   uint32_t highFireSecondsToday = 0;
   uint32_t lastCycleSeconds = 0;
+  uint32_t failedTrialsThisCall = 0;
+
+  CycleStats lastCycle;  // the last completed cycle; all zero/NaN until one ends
+  Totals totals;
 };
 
 // Events the caller may want to log or publish.
-enum class Event : uint8_t { None, PhaseChanged, CycleStarted, CycleEnded, AlertRaised, AlertCleared };
+enum class Event : uint8_t { None, PhaseChanged, CycleStarted, CycleEnded, AlertRaised, AlertCleared, TrialFailed };
 
 class Model {
  public:
@@ -108,6 +139,10 @@ class Model {
 
   // Restore counters after a reboot.
   void restoreDay(uint32_t cycles, uint32_t burnerS, uint32_t highFireS);
+  void restoreTotals(const Totals& t) { st_.totals = t; }
+
+  // The filter was replaced: restart its blower-time count.
+  void resetFilter() { st_.totals.filterBlowerSeconds = 0; }
 
   const State& state() const { return st_; }
   uint32_t newAlerts() const { return raised_; }
@@ -121,6 +156,7 @@ class Model {
   uint32_t lastMs_ = 0;
   uint32_t msCarryBurner_ = 0;
   uint32_t msCarryHigh_ = 0;
+  uint32_t msCarryBlower_ = 0;
 
   bool valveWas_ = false;
   uint32_t valveSinceMs_ = 0;
@@ -133,6 +169,17 @@ class Model {
   float flueAtValveOpen_ = NAN;
   bool flameLossLatched_ = false;
   bool shortCycleLatched_ = false;
+  bool ignitionFailLatched_ = false;
+
+  // Current cycle accumulators (time-weighted sums, ms).
+  bool cycleFlame_ = false;
+  bool highWas_ = false;
+  uint32_t stageSinceMs_ = 0;
+  uint32_t cycleIgnitionS_ = 0;
+  uint32_t cycleHighMs_ = 0;
+  float flueMax_ = NAN;
+  double riseLowSum_ = 0, riseHighSum_ = 0, inducerSum_ = 0, blowerSum_ = 0;
+  uint32_t riseLowMs_ = 0, riseHighMs_ = 0, inducerMs_ = 0, blowerMs_ = 0;
 };
 
 }  // namespace furnace

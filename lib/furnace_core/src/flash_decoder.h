@@ -34,6 +34,11 @@ class FlashDecoder {
   // 0 = normal or unknown, 2..9 = flash code, 99 = steady on.
   int code() const { return code_; }
 
+  // Length of the most recent complete lit and dark periods, for checking the
+  // timing thresholds against the real LED (bench page).
+  uint32_t lastOnMs() const { return lastOnMs_; }
+  uint32_t lastOffMs() const { return lastOffMs_; }
+
   // Human readable meaning of a 50A51 code.
   static const char* describe(int code);
 
@@ -48,6 +53,8 @@ class FlashDecoder {
   int count_ = 0;            // flashes in the current group
   int lastGroup_ = -1;       // count of the previous complete group
   int code_ = kCodeNormal;
+  uint32_t lastOnMs_ = 0;
+  uint32_t lastOffMs_ = 0;
 };
 
 }  // namespace furnace

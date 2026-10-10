@@ -39,6 +39,7 @@ void FlashDecoder::sample(bool lit, uint32_t nowMs) {
   }
 
   if (lit != lit_) {
+    (lit ? lastOffMs_ : lastOnMs_) = nowMs - edgeMs_;
     lit_ = lit;
     edgeMs_ = nowMs;
     if (lit) {
