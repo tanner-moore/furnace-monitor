@@ -115,6 +115,11 @@ static void publishDiscovery() {
   sensor(cmps, "filter_h", "Filter blower hours", "h", "duration", "measurement");
   sensor(cmps, "filter_pct", "Filter life left", "%", nullptr, "measurement");
   binary(cmps, "filter_due", "Filter change due", "problem");
+  const uint8_t fsAi[3] = {config.aiPress1, config.aiPress2, config.aiPress3};
+  if (config.filterPressSensor >= 1 && config.filterPressSensor <= 3 && fsAi[config.filterPressSensor - 1]) {
+    binary(cmps, "filter_dirty", "Filter dirty", "problem");
+    sensor(cmps, "filter_dp", "Filter pressure drop (blower running)", "Pa", "pressure", "measurement");
+  }
   JsonObject reset = component(cmps, "filter_reset", "button", "Filter changed");
   reset["cmd_t"] = topicFilterReset;
   reset["pl_prs"] = "PRESS";

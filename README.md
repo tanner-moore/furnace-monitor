@@ -22,7 +22,7 @@ The full build plan (sensors, wiring, safety notes) is in the project's [build p
 | CO level (optional) | CO transmitter with a 0-10 V output, in ppm (default 25 ppm/V, alert at 35 ppm) | AI 4 (tick CO sensor on the General tab) |
 | Room temperature (optional) | Temperature transmitter with a 0-10 V output (default 0 to 50 °C) | AI 5 (tick Room temperature sensor on the General tab) |
 | Outdoor temperature (optional) | Temperature transmitter with a 0-10 V output, outdoor rated (default -40 to 60 °C) | AI 6 (tick Outdoor temperature sensor on the General tab) |
-| Pressures (optional, up to 3, renamable) | Differential pressure transmitters with a 0-10 V output, set up by default as filter pressure drop (0 to 1 in. w.c.) and total external static pressure, TESP (0 to 2 in. w.c.), plus a spare (0 to 1 in. w.c.) | AI 7, 8, 9 (tick Pressure sensor 1-3 on the General tab) |
+| Pressures (optional, up to 3, renamable) | Differential pressure sensors: Sensirion SDP810 or SDP811 on I2C, or 0-10 V transmitters. Set up by default as filter pressure drop (SDP810), total external static pressure, TESP (SDP811), and a spare 0-10 V transmitter | I2C bus, or AI 7, 8, 9 (tick Pressure sensor 1-3 on the General tab) |
 | Spare probe (optional, renamable) | PT100, 3-wire | PT100 4 |
 
 Untick any sensor that isn't fitted on the Settings General tab. That saves its input as 0, which the firmware treats as not fitted, and greys out its settings on the other tabs. The CO sensor adds CO level and alerts to Home Assistant; it does not replace the CO alarms the house already needs.
@@ -31,7 +31,9 @@ The CO16 has four PT100 channels, and supply, return and flue use three of them,
 
 Outdoor temperature can also come from [Open-Meteo](https://open-meteo.com/), a free weather service that needs no account. Tick "Outdoor temperature from Open-Meteo" on the General tab and enter your latitude and longitude on the Network tab. The board fetches the current temperature every 15 minutes. When an outdoor sensor is also fitted, the sensor is used and Open-Meteo fills in if it fails. Both are off by default.
 
-Pressure sensors only read air pressure through tubes to static-pressure tips in the ductwork. For filter pressure drop, put one tip in the return just before the filter (high port) and one just after it (low port). For TESP, put one tip in the supply plenum just above the furnace, before any cooling coil (high port), and one in the return between the filter and the furnace (low port). Nothing connects to the furnace's own pressure-switch hoses. Gas pressure is deliberately not offered, because measuring it permanently means adding a fitting to the gas valve, and that is a job for a gas fitter, not a monitor.
+Pressure sensors only read air pressure through tubes to static-pressure tips in the ductwork. For filter pressure drop, put one tip in the return just before the filter (high port) and one just after it (low port). For TESP, put one tip in the supply plenum just above the furnace, before any cooling coil (high port), and one in the return between the filter and the furnace (low port). Nothing connects to the furnace's own pressure-switch hoses.
+
+The Sensirion SDP810 (I2C address 0x25) and SDP811 (0x26) share the CO16's I2C bus (SDA GPIO 8, SCL GPIO 18) with its own chips, which use other addresses; power them from 3.3 V. The two addresses are why the defaults pair one of each: two SDP810s can't share the bus. Keep the I2C wires short, with the sensor near the board and the tubes run to the ductwork. These sensors let a tiny airflow through, so very long or thin tubing makes them read slightly low. The firmware runs them in continuous mode and averages everything since the last read, once a second. 0-10 V transmitters are still supported for anything else. Gas pressure is deliberately not offered, because measuring it permanently means adding a fitting to the gas valve, and that is a job for a gas fitter, not a monitor.
 
 ## What it tracks
 
@@ -39,6 +41,11 @@ Pressure sensors only read air pressure through tubes to static-pressure tips in
 - **Per-cycle health**: time to ignition, settled temperature rise on low and high fire, peak flue temperature, and average inducer and blower current. Trends in these show a clogging filter or a tiring motor long before anything fails.
 - **Totals** (cycles, failed trials, burner, high-fire and blower hours) that survive restarts.
 - **Air filter**: blower hours since the last change, against `filterLifeHours` (default 500). Press "Filter changed" on the web page or in Home Assistant after replacing it.
+- **Dirty filter**: from the pressure sensor across the filter (`filterPressSensor`, default sensor 1). Each minute the blower runs, after its first minute, gives an average pressure drop. A blower run's high reading is its highest such minute. Two modes on the Alerts tab (`filterMode`):
+  - **Auto** (default): after a new filter, the firmware learns its clean reading as the highest run high over the first 10 blower runs of at least 4 minutes, preferring the fastest blower speed seen. The filter is dirty once five running minutes in a row reach twice that, and clean again after five under 90% of it. A new filter is detected by itself when two blower runs in a row, at the same speed as the latest one (blower current within 10%), read under 60% of it; that needs the blower current sensor, since without it a slower speed looks like a cleaner filter. Pressing "Filter changed" also starts a new filter. If the blower's fastest speed doesn't run during the first 10 runs (mild weather), the learned reading is low; press "Filter changed" again on a cold day, or use manual.
+  - **Manual**: dirty when a running minute is at or over `filterDirtyPa` (default 0.25 in. w.c.), clean when one is under it.
+
+  Dirty shows as an event, on the Live tab, on the screen and as a Home Assistant "Filter dirty" problem sensor.
 
 ## Build and flash
 
@@ -77,6 +84,10 @@ The board subscribes only to `homeassistant/status` (to resend discovery when Ho
 ## SD card and history
 
 With a card in the CO16's slot (FAT32), the board writes one-minute averages to `/log/YYYY-MM-DD.csv`, burner cycles to `/cycles.csv` and events to `/events.csv`. On start it reads the last 30 days back, so the History tab (24 h, 7 days, 30 days), the Cycles tab and the event log carry on across restarts. Without a card everything works, but history starts again at each restart.
+
+## Home page
+
+The page opens on Home, which shows only what's worth a glance: what the furnace is doing, any problem, inside, outside and supply air temperatures (supply and return when there are no room or outdoor readings), the air filter's state, carbon monoxide when that sensor is fitted, and today's cycles and burner time. "All readings" opens the Live tab with everything else.
 
 ## Live tab layout
 

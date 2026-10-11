@@ -7,14 +7,14 @@
 <style>
   :root {
     --bg: #f6f6f4; --card: #fff; --ink: #1d1d1b; --muted: #6b6b66; --line: #e2e2dc;
-    --on: #c2410c; --on-bg: #fff1e8; --ok: #15803d; --bad: #b91c1c; --bad-bg: #fdecec;
+    --on: #c2410c; --on-bg: #fff1e8; --ok: #15803d; --ok-bg: #e9f6ee; --bad: #b91c1c; --bad-bg: #fdecec;
     --supply: #c2410c; --return: #2563eb; --flue: #7c3aed;
     --rise: #b45309; --room: #0d9488; --outdoor: #16a34a; --spare: #db2777; --inducer: #64748b; --blowerc: #0891b2; --co: #dc2626; --p1: #9333ea; --p2: #0284c7; --p3: #65a30d;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #161615; --card: #1f1f1d; --ink: #ecece8; --muted: #9a9a93; --line: #33332f;
-      --on: #fb923c; --on-bg: #3a2414; --ok: #4ade80; --bad: #f87171; --bad-bg: #3b1717;
+      --on: #fb923c; --on-bg: #3a2414; --ok: #4ade80; --ok-bg: #15291c; --bad: #f87171; --bad-bg: #3b1717;
       --supply: #fb923c; --return: #60a5fa; --flue: #a78bfa;
       --rise: #fbbf24; --room: #2dd4bf; --outdoor: #4ade80; --spare: #f472b6; --inducer: #94a3b8; --blowerc: #22d3ee; --co: #f87171; --p1: #c084fc; --p2: #38bdf8; --p3: #a3e635;
     }
@@ -111,6 +111,30 @@
   #dashBar { justify-content: flex-end; margin-bottom: 16px; }
   @media (max-width: 640px) { .dash { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 640px) { .di { grid-template-columns: repeat(4, 1fr); } }
+  /* Home: the few things worth a glance. */
+  #home { max-width: 560px; margin: 0 auto; }
+  .hero { display: flex; align-items: center; gap: 16px; padding: 20px; }
+  .hero .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 5px var(--ok-bg); flex: none; }
+  .hero .dot.on { background: var(--on); box-shadow: 0 0 0 5px var(--on-bg); }
+  .hero .dot.bad { background: var(--bad); box-shadow: 0 0 0 5px var(--bad-bg); }
+  .hero.bad { border-color: var(--bad); }
+  #hPhase { font-size: 22px; font-weight: 600; }
+  #hSub { color: var(--muted); font-size: 14px; }
+  .hero.bad #hSub { color: var(--bad); }
+  .temps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+  .temps .card { margin: 0; text-align: center; padding: 16px 8px; }
+  .temps .label { color: var(--muted); font-size: 13px; }
+  .temps .big { font-size: clamp(26px, 8vw, 38px); font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; }
+  .temps .big small { font-size: 0.45em; color: var(--muted); font-weight: 400; margin-left: 2px; }
+  .hlist { padding: 4px 16px; }
+  .hlist > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .hlist > div:last-child { border-bottom: 0; }
+  .hlist .what { font-weight: 500; }
+  .hlist .detail { color: var(--muted); font-size: 13px; }
+  .pill { padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; white-space: nowrap; background: var(--ok-bg); color: var(--ok); }
+  .pill.bad { background: var(--bad-bg); color: var(--bad); }
+  .pill.wait { background: var(--bg); color: var(--muted); }
+  .more { display: block; margin: 0 auto 16px; }
 </style>
 </head>
 <body>
@@ -119,7 +143,8 @@
   <span class="meta" id="meta">connecting…</span>
 </header>
 <nav>
-  <button data-tab="live" class="active">Live</button>
+  <button data-tab="home" class="active">Home</button>
+  <button data-tab="live">Live</button>
   <button data-tab="history">History</button>
   <button data-tab="cycles">Cycles</button>
   <button data-tab="events">Events</button>
@@ -127,7 +152,21 @@
   <button data-tab="settings">Settings</button>
 </nav>
 <main>
-  <section id="live" class="active">
+  <section id="home" class="active">
+    <div class="card hero" id="hero">
+      <span class="dot" id="hDot"></span>
+      <div><div id="hPhase">Connecting…</div><div id="hSub"></div></div>
+    </div>
+    <div class="temps" id="hTemps"></div>
+    <div class="card hlist">
+      <div id="hFilter"><div><div class="what">Air filter</div><div class="detail" id="hFilterText">–</div></div><span class="pill wait" id="hFilterPill">–</span></div>
+      <div id="hCo" hidden><div><div class="what">Carbon monoxide</div><div class="detail" id="hCoText">–</div></div><span class="pill" id="hCoPill">–</span></div>
+      <div><div><div class="what">Today</div><div class="detail" id="hToday">–</div></div></div>
+    </div>
+    <button class="btn ghost small more" id="hMore">All readings</button>
+  </section>
+
+  <section id="live">
     <div class="card alert" id="alert" hidden></div>
     <!-- Dashboard widgets. Order and visibility come from the saved layout (Customize dashboard);
          data-hide marks widgets that start hidden. -->
@@ -260,7 +299,8 @@ const LAMPS = [
   ["blower", "Blower"], ["co_alarm", "CO alarm"],
 ];
 const $ = (id) => document.getElementById(id);
-const fmt = (v, unit, d = 1) => typeof v !== "number" || !isFinite(v) ? "–" : `${v.toFixed(d)}<span class="unit"> ${unit}</span>`;
+// A reading that rounds to zero shows as 0, not -0.
+const fmt = (v, unit, d = 1) => typeof v !== "number" || !isFinite(v) ? "–" : `${(Number(v.toFixed(d)) || 0).toFixed(d)}<span class="unit"> ${unit}</span>`;
 // Temperature units come from the board's setting (General tab); the browser's language is only
 // the guess until the first state arrives.
 let useF = false;
@@ -344,13 +384,67 @@ function render(s) {
   $("filterText").textContent = life
     ? `${used.toFixed(0)} of ${life} blower hours${s.filter_due ? " · change it now" : ""}${s.filter_changed ? ` · changed ${new Date(s.filter_changed * 1000).toLocaleDateString()}` : ""}`
     : `${used.toFixed(0)} blower hours`;
-  $("filterBar").classList.toggle("due", !!s.filter_due);
+  if (s.filter_press) {
+    const dp = pressShown(s.filter_dp), lim = pressShown(s.filter_dirty_pa), dec = pressInwc ? 2 : 0;
+    const now = dp == null ? "–" : dp.toFixed(dec);
+    $("filterText").textContent += lim == null
+      ? ` · pressure drop ${now} ${pressLabel()} · learning the new filter, ${s.filter_learn_left} blower runs to go`
+      : ` · pressure drop ${now} of ${lim.toFixed(dec)} ${pressLabel()}${s.filter_mode === "auto" ? " (auto)" : ""}` +
+        (s.filter_dirty ? " · dirty, change it now" : "");
+  }
+  $("filterText").classList.toggle("bad", !!s.filter_dirty);
+  $("filterBar").classList.toggle("due", !!s.filter_due || !!s.filter_dirty);
   $("filterBar").firstElementChild.style.width = `${life ? Math.min(100, 100 * used / life) : 0}%`;
+  renderHome(s);
   const alert = $("alert");
   alert.hidden = !s.problem;
   alert.textContent = s.problem ? `Problem: ${s.alerts.replaceAll("_", " ").replaceAll(",", ", ")}` : "";
   $("meta").textContent = `${s.link} ${s.ip} · MQTT ${s.mqtt ? "connected" : "off"} · SD ${s.sd ? "logging" : "off"} · up ${Math.floor(s.uptime_s / 3600)} h`;
 }
+
+// Home: what the furnace is doing, whether anything is wrong, the temperatures people look at, and
+// the filter. Everything else is on the Live tab.
+const HOME_PHASE = {
+  idle: "Idle", heat_call: "Starting up", ignition: "Lighting", low_fire: "Heating, low fire",
+  high_fire: "Heating, high fire", post_purge: "Finishing", blower_overrun: "Cooling down",
+  fan_only: "Fan only", lockout: "Locked out",
+};
+function renderHome(s) {
+  const heating = ["heat_call", "ignition", "low_fire", "high_fire", "post_purge", "blower_overrun"].includes(s.phase);
+  const bad = !!s.problem || s.phase === "lockout";
+  $("hero").classList.toggle("bad", bad);
+  $("hDot").className = `dot${bad ? " bad" : heating ? " on" : ""}`;
+  $("hPhase").textContent = HOME_PHASE[s.phase] || s.phase;
+  $("hSub").textContent = bad ? `Problem: ${(s.alerts || s.board_status || "").replaceAll("_", " ").replaceAll(",", ", ")}`
+    : s.phase === "high_fire" || s.phase === "low_fire" ? `Supply air ${fmtPlain(temp(s.t_supply), 1)}${tUnit}, ${fmtPlain(rise(s.delta_t), 0)}${tUnit} above return`
+    : "No problems";
+  // Up to three temperatures: room and outdoor when fitted, then supply and return air.
+  const t = [];
+  if (s.room_fitted) t.push(["Inside", s.t_room]);
+  if (s.out_fitted) t.push(["Outside", s.t_out]);
+  t.push(["Supply air", s.t_supply], ["Return air", s.t_return]);
+  $("hTemps").innerHTML = t.slice(0, 3).map(([n, v]) =>
+    `<div class="card"><div class="label">${n}</div><div class="big">${fmtPlain(temp(v), 1)}<small>${tUnit}</small></div></div>`).join("");
+  // Filter: dirty from its pressure drop when that's fitted, otherwise blower hours.
+  const pill = (el, cls, text) => { el.className = `pill${cls ? ` ${cls}` : ""}`; el.textContent = text; };
+  const due = !!s.filter_due, dirty = !!s.filter_dirty, dec = pressInwc ? 2 : 0;
+  if (dirty || due) pill($("hFilterPill"), "bad", "Change it");
+  else if (s.filter_press && s.filter_dirty_pa == null) pill($("hFilterPill"), "wait", "Learning");
+  else pill($("hFilterPill"), "", "OK");
+  const hrs = s.filter_life_h ? `${(s.filter_h ?? 0).toFixed(0)} of ${s.filter_life_h} blower hours` : `${(s.filter_h ?? 0).toFixed(0)} blower hours`;
+  $("hFilterText").textContent = s.filter_press && s.filter_dp != null
+    ? `Pressure drop ${pressShown(s.filter_dp).toFixed(dec)}${s.filter_dirty_pa != null ? ` of ${pressShown(s.filter_dirty_pa).toFixed(dec)}` : ""} ${pressLabel()}`
+    : hrs;
+  $("hCo").hidden = !s.co_ppm_fitted;
+  if (s.co_ppm_fitted) {
+    pill($("hCoPill"), s.co_alarm ? "bad" : "", s.co_alarm ? "Alarm" : "OK");
+    $("hCoText").textContent = `${fmtPlain(s.co_ppm, 0)} ppm`;
+  }
+  const m = s.burner_min_today ?? 0;
+  $("hToday").textContent = `${s.cycles_today ?? 0} heating cycle${s.cycles_today === 1 ? "" : "s"} · burner on ${m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`}`;
+}
+const fmtPlain = (v, d) => typeof v !== "number" || !isFinite(v) ? "–" : (Number(v.toFixed(d)) || 0).toFixed(d);
+$("hMore").onclick = () => document.querySelector('nav button[data-tab="live"]').click();
 
 function connect() {
   const ws = new WebSocket(`ws://${location.host}/ws`);
@@ -761,7 +855,7 @@ const SETTINGS_TABS = [
       ["aiRoom", "Room temperature sensor", "0-10 V temperature transmitter", "sensor"],
       ["aiOutdoor", "Outdoor temperature sensor", "0-10 V temperature transmitter", "sensor"],
     ] },
-    { title: "Pressure sensors", note: "0-10 V differential pressure transmitters. Name them on the Wiring tab.", fields: [
+    { title: "Pressure sensors", note: "Sensirion SDP810 or SDP811 sensors on the I2C bus, or 0-10 V transmitters. Pick the type and name them on the Wiring tab.", fields: [
       ["aiPress1", "Pressure sensor 1", "", "sensor"],
       ["aiPress2", "Pressure sensor 2", "", "sensor"],
       ["aiPress3", "Pressure sensor 3", "", "sensor"],
@@ -823,12 +917,15 @@ const SETTINGS_TABS = [
       ["aiRoom", "Room temperature sensor"],
       ["aiOutdoor", "Outdoor temperature sensor"],
     ] },
-    { title: "Pressure sensors", note: "CO16 analog input number, 1 to 16, and the name shown on the dashboard and in Home Assistant.", fields: [
-      ["aiPress1", "Pressure sensor 1"],
+    { title: "Pressure sensors", note: "The sensor type, the CO16 analog input for a 0-10 V transmitter (1 to 16), and the name shown on the dashboard and in Home Assistant. The SDP810 and SDP811 have different I2C addresses, so one of each can be fitted.", fields: [
+      ["press1Type", "Pressure sensor 1 type", "", "ptype"],
+      ["aiPress1", "Pressure sensor 1 analog input"],
       ["press1Name", "Pressure sensor 1 name"],
-      ["aiPress2", "Pressure sensor 2"],
+      ["press2Type", "Pressure sensor 2 type", "", "ptype"],
+      ["aiPress2", "Pressure sensor 2 analog input"],
       ["press2Name", "Pressure sensor 2 name"],
-      ["aiPress3", "Pressure sensor 3"],
+      ["press3Type", "Pressure sensor 3 type", "", "ptype"],
+      ["aiPress3", "Pressure sensor 3 analog input"],
       ["press3Name", "Pressure sensor 3 name"],
     ] },
     { title: "Temperature probes", note: "PT100 channel, 1 to 4. Turn probes on or off on the General tab.", fields: [
@@ -855,7 +952,7 @@ const SETTINGS_TABS = [
       ["outdoorLowC", "Reads this at 0 V", "", "temp"],
       ["outdoorHighC", "Reads this at 10 V", "", "temp"],
     ] },
-    { title: "Pressure sensors", note: "The pressures each sensor's range runs between, from its label. Below zero is suction.", fields: [
+    { title: "Pressure sensors", note: "For 0-10 V transmitters: the pressures each one's range runs between, from its label. Below zero is suction. SDP810 and SDP811 sensors need no calibration.", fields: [
       ["press1LowPa", "Sensor 1 reads this at 0 V", "", "press"],
       ["press1HighPa", "Sensor 1 reads this at 10 V", "", "press"],
       ["press2LowPa", "Sensor 2 reads this at 0 V", "", "press"],
@@ -901,6 +998,9 @@ const SETTINGS_TABS = [
     ] },
     { title: "Air filter", fields: [
       ["filterLifeHours", "Change the filter every", "Counted in blower running hours", "h"],
+      ["filterPressSensor", "Dirty-filter alarm uses", "The pressure sensor across the filter", "psensor"],
+      ["filterMode", "Dirty-filter limit", "Auto learns each new filter's reading over its first 10 blower runs and flags it dirty at twice that. It also spots a new filter by itself when the pressure drop falls sharply, or press Filter changed", "fmode"],
+      ["filterDirtyPa", "Manual: filter dirty at or above", "Pressure drop with the blower running. Under it counts as clean", "press"],
     ] },
   ] },
   { id: "display", name: "Screen", sections: [
@@ -966,6 +1066,15 @@ function applySensors() {
     if (!dep.bool) off.add(k);
     for (const f of dep.fields || []) off.add(f);
   }
+  // I2C pressure sensors use no analog input and need no range.
+  for (const i of [1, 2, 3]) {
+    if (formField(`press${i}Type`)?.value === "ai") continue;
+    off.add(`aiPress${i}`).add(`press${i}LowPa`).add(`press${i}HighPa`);
+  }
+  // The dirty-filter limit needs its pressure sensor switched on.
+  const fs = Number(formField("filterPressSensor")?.value);
+  if (!fs || document.querySelector(`[data-sensor="aiPress${fs}"]`)?.checked === false) off.add("filterMode").add("filterDirtyPa");
+  if (formField("filterMode")?.value !== "manual") off.add("filterDirtyPa");
   document.querySelectorAll("#settingsForm [data-def]").forEach((el) => {
     el.disabled = off.has(el.name);
     el.closest("label").classList.toggle("off", el.disabled);
@@ -1060,13 +1169,19 @@ async function loadSettings() {
     if (kind !== "secret" && v === undefined) return "";
     const isTemp = kind === "temp" || kind === "dtemp";
     const unit = isTemp ? `<span class="tu">${settingsUnit()}</span>` : kind === "press" ? `<span class="pu">${settingsPressUnit()}</span>`
-      : kind === "tz" || kind === "secret" || kind === "units" || kind === "punits" ? "" : kind;
+      : ["tz", "secret", "units", "punits", "ptype", "psensor", "fmode"].includes(kind) ? "" : kind;
     const name = `${attr(label)}${unit ? ` (${unit})` : ""}${hint ? `<span class="hint">${attr(hint)}</span>` : ""}`;
     if (kind === "secret") return `<label><span>${name}</span><input type="password" name="${k}" placeholder="unchanged" autocomplete="new-password"></label>`;
     let input;
     if (kind === "tz") input = tzSelect(v);
     else if (kind === "units") input = `<select name="${k}" data-def>${[["F", "°F (Fahrenheit)"], ["C", "°C (Celsius)"]]
       .map(([u, n]) => `<option value="${u}" ${u === v ? "selected" : ""}>${n}</option>`).join("")}</select>`;
+    else if (kind === "ptype") input = `<select name="${k}" data-def>${[["sdp810", "Sensirion SDP810 (I2C 0x25)"], ["sdp811", "Sensirion SDP811 (I2C 0x26)"], ["ai", "0-10 V transmitter"]]
+      .map(([u, n]) => `<option value="${u}" ${u === v ? "selected" : ""}>${n}</option>`).join("")}</select>`;
+    else if (kind === "fmode") input = `<select name="${k}" data-def>${[["auto", "Auto: twice the new filter's reading"], ["manual", "Manual: a set value"]]
+      .map(([u, n]) => `<option value="${u}" ${u === v ? "selected" : ""}>${n}</option>`).join("")}</select>`;
+    else if (kind === "psensor") input = `<select name="${k}" data-num="true" data-kind="" data-def>${[[0, "Off"], ...[1, 2, 3].map((i) => [i, `Sensor ${i}: ${cfg[`press${i}Name`]}`])]
+      .map(([u, n]) => `<option value="${u}" ${u === v ? "selected" : ""}>${attr(n)}</option>`).join("")}</select>`;
     else if (kind === "punits") input = `<select name="${k}" data-def>${[["inwc", "Inches of water (in. w.c.)"], ["Pa", "Pascals (Pa)"]]
       .map(([u, n]) => `<option value="${u}" ${u === v ? "selected" : ""}>${n}</option>`).join("")}</select>`;
     else if (typeof v === "boolean") input = `<input type="checkbox" name="${k}" ${v ? "checked" : ""} data-bool="true" data-def>`;
@@ -1114,6 +1229,7 @@ async function loadSettings() {
     markField(el);
   });
   document.querySelectorAll("#settingsForm [data-sensor]").forEach((b) => b.onchange = () => toggleSensor(b));
+  for (const k of ["press1Type", "press2Type", "press3Type", "filterPressSensor", "filterMode"]) formField(k)?.addEventListener("change", applySensors);
   document.querySelectorAll("#settingsForm [data-sreset]").forEach((b) => b.onclick = () => {
     const box = document.querySelector(`[data-sensor="${b.dataset.sreset}"]`);
     box.checked = !!Number(defaultFor(box.dataset.sensor));
