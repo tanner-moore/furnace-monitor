@@ -69,11 +69,15 @@ The board subscribes only to `homeassistant/status` (to resend discovery when Ho
 
 ## Web API
 
-`GET /api/state`, `GET /api/history?hours=24` (up to 720), `GET /api/cycles`, `GET /api/events`, `GET /api/bench`, `POST /api/filter/reset` (login), `GET`/`POST /api/config` (login), `POST /update` (login), WebSocket `/ws` (live state every second).
+`GET /api/state`, `GET`/`POST /api/layout` (saving needs login), `GET /api/history?hours=24` (up to 720), `GET /api/cycles`, `GET /api/events`, `GET /api/bench`, `POST /api/filter/reset` (login), `GET`/`POST /api/config` (login), `POST /update` (login), WebSocket `/ws` (live state every second).
 
 ## SD card and history
 
 With a card in the CO16's slot (FAT32), the board writes one-minute averages to `/log/YYYY-MM-DD.csv`, burner cycles to `/cycles.csv` and events to `/events.csv`. On start it reads the last 30 days back, so the History tab (24 h, 7 days, 30 days), the Cycles tab and the event log carry on across restarts. Without a card everything works, but history starts again at each restart.
+
+## Live tab layout
+
+Press "Customize dashboard" under the Live tab to hide tiles, show hidden ones (such as the 6-hour temperature chart), and reorder them by dragging or with the arrow buttons. Saving needs the settings login. The layout is stored on the board, so every browser sees the same layout, and saving it doesn't restart the board. "Reset to default" goes back to the standard layout.
 
 ## Bench tab
 

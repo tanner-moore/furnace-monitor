@@ -177,6 +177,27 @@ void begin() {
     sendJson(req, doc);
   });
 
+  // Dashboard layout. Anyone can read it (the Live tab needs it); saving needs the login but
+  // no restart.
+  server.on("/api/layout", HTTP_GET, [](AsyncWebServerRequest* req) {
+    JsonDocument doc;
+    doc["layout"] = config.dashLayout;
+    sendJson(req, doc);
+  });
+  auto* layout = new AsyncCallbackJsonWebHandler("/api/layout", [](AsyncWebServerRequest* req, JsonVariant& body) {
+    if (!authorized(req)) return;
+    const String l = body["layout"] | "";
+    if (l.length() > 600) {
+      req->send(400, "text/plain", "layout too long");
+      return;
+    }
+    config.dashLayout = l;
+    const bool ok = config.save();
+    req->send(ok ? 200 : 500, "text/plain", ok ? "layout saved" : "could not save layout");
+  });
+  layout->setMethod(HTTP_POST);
+  server.addHandler(layout);
+
   auto* save = new AsyncCallbackJsonWebHandler("/api/config", [](AsyncWebServerRequest* req, JsonVariant& body) {
     if (!authorized(req)) return;
     config.fromJson(body.as<JsonObjectConst>());

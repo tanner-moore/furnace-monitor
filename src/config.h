@@ -61,6 +61,10 @@ struct Config {
   // Home Assistant converts to its own units.
   String tempUnit = "C";
 
+  // Live tab layout from "Customize dashboard": widget names in order, hidden ones prefixed
+  // with "-". Blank means the default layout.
+  String dashLayout;
+
   // Air filter: blower hours between changes.
   uint16_t filterLifeHours = 500;
 

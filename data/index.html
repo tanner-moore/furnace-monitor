@@ -18,6 +18,7 @@
     }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; font: 15px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--ink); }
   header { display: flex; align-items: baseline; gap: 12px; padding: 16px; flex-wrap: wrap; }
   header h1 { font-size: 20px; margin: 0; }
@@ -87,6 +88,20 @@
   .di div.on { background: var(--on-bg); color: var(--on); border-color: var(--on); font-weight: 600; }
   .di small { display: block; font-size: 11px; }
   .bad { color: var(--bad); } .good { color: var(--ok); }
+  .dash { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px; }
+  .dash > .card { margin-bottom: 0; min-width: 0; }
+  .dash > .wide { grid-column: 1 / -1; }
+  .dash > .off, .dash > .absent { display: none; }
+  .dash.editing > .off, .dash.editing > .absent { display: block; opacity: 0.4; }
+  .dash.editing > .card { outline: 1px dashed var(--muted); outline-offset: 2px; cursor: grab; }
+  .dash.editing > .dragging { opacity: 0.2; }
+  .dash.editing > .dropto { outline: 2px solid var(--on); }
+  .wbar { display: flex; align-items: center; gap: 4px; margin: -8px -8px 8px; font-size: 12px; color: var(--muted); }
+  .wbar span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wbar button { font: inherit; padding: 2px 7px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); color: var(--ink); cursor: pointer; }
+  .btn.ghost { background: none; color: var(--ink); border-color: var(--line); }
+  #dashBar { justify-content: flex-end; margin-bottom: 16px; }
+  @media (max-width: 640px) { .dash { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 640px) { .di { grid-template-columns: repeat(4, 1fr); } }
 </style>
 </head>
@@ -106,42 +121,50 @@
 <main>
   <section id="live" class="active">
     <div class="card alert" id="alert" hidden></div>
-    <div class="card">
-      <div class="phases" id="phases"></div>
-    </div>
-    <div class="grid">
-      <div class="card tile"><div class="label">Supply</div><div class="value" id="t_supply">–</div></div>
-      <div class="card tile"><div class="label">Return</div><div class="value" id="t_return">–</div></div>
-      <div class="card tile"><div class="label">Rise</div><div class="value" id="delta_t">–</div></div>
-      <div class="card tile"><div class="label">Flue</div><div class="value" id="t_flue">–</div></div>
-      <div class="card tile"><div class="label">Inducer</div><div class="value" id="i_inducer">–</div></div>
-      <div class="card tile"><div class="label">Blower</div><div class="value" id="i_blower">–</div></div>
-      <div class="card tile" id="tile_room" hidden><div class="label">Room</div><div class="value" id="t_room">–</div></div>
-      <div class="card tile" id="tile_out" hidden><div class="label" id="out_label">Outdoor</div><div class="value" id="t_out">–</div></div>
-      <div class="card tile" id="tile_spare" hidden><div class="label" id="spare_name">Spare</div><div class="value" id="t_spare">–</div></div>
-      <div class="card tile" id="tile_co" hidden><div class="label">Carbon monoxide</div><div class="value" id="co_ppm">–</div></div>
-    </div>
-    <div class="card">
-      <div class="lamps" id="lamps"></div>
-    </div>
-    <div class="grid four">
-      <div class="card tile"><div class="label">Cycles today</div><div class="value" id="cycles_today">–</div></div>
-      <div class="card tile"><div class="label">Burner today</div><div class="value" id="burner_min_today">–</div></div>
-      <div class="card tile"><div class="label">High fire today</div><div class="value" id="high_fire_min_today">–</div></div>
-      <div class="card tile"><div class="label">Control board</div><div class="value" style="font-size:16px" id="board_status">–</div></div>
-    </div>
-    <div class="grid four">
-      <div class="card tile"><div class="label">Last cycle: ignition</div><div class="value" id="cycle_ignition_s">–</div></div>
-      <div class="card tile"><div class="label">Last cycle: low fire rise</div><div class="value" id="cycle_rise_low">–</div></div>
-      <div class="card tile"><div class="label">Last cycle: high fire rise</div><div class="value" id="cycle_rise_high">–</div></div>
-      <div class="card tile"><div class="label">Last cycle: blower</div><div class="value" id="cycle_blower_a">–</div></div>
-    </div>
-    <div class="card">
-      <div class="row">
-        <div><strong>Air filter</strong> <span class="note" id="filterText">–</span></div>
-        <button class="btn small" id="filterReset">Filter changed</button>
+    <!-- Dashboard widgets. Order and visibility come from the saved layout (Customize dashboard);
+         data-hide marks widgets that start hidden. -->
+    <div class="dash" id="dash">
+      <div class="card wide" data-w="phases" data-name="Furnace phase"><div class="phases" id="phases"></div></div>
+      <div class="card tile" data-w="supply" data-name="Supply"><div class="label">Supply</div><div class="value" id="t_supply">–</div></div>
+      <div class="card tile" data-w="return" data-name="Return"><div class="label">Return</div><div class="value" id="t_return">–</div></div>
+      <div class="card tile" data-w="rise" data-name="Rise"><div class="label">Rise</div><div class="value" id="delta_t">–</div></div>
+      <div class="card tile" data-w="flue" data-name="Flue"><div class="label">Flue</div><div class="value" id="t_flue">–</div></div>
+      <div class="card tile" data-w="inducer" data-name="Inducer"><div class="label">Inducer</div><div class="value" id="i_inducer">–</div></div>
+      <div class="card tile" data-w="blower" data-name="Blower"><div class="label">Blower</div><div class="value" id="i_blower">–</div></div>
+      <div class="card tile" data-w="room" data-name="Room" id="tile_room"><div class="label">Room</div><div class="value" id="t_room">–</div></div>
+      <div class="card tile" data-w="outdoor" data-name="Outdoor" id="tile_out"><div class="label" id="out_label">Outdoor</div><div class="value" id="t_out">–</div></div>
+      <div class="card tile" data-w="spare" data-name="Spare probe" id="tile_spare"><div class="label" id="spare_name">Spare</div><div class="value" id="t_spare">–</div></div>
+      <div class="card tile" data-w="co" data-name="Carbon monoxide" id="tile_co"><div class="label">Carbon monoxide</div><div class="value" id="co_ppm">–</div></div>
+      <div class="card wide" data-w="lamps" data-name="Signals"><div class="lamps" id="lamps"></div></div>
+      <div class="card tile" data-w="cycles_today" data-name="Cycles today"><div class="label">Cycles today</div><div class="value" id="cycles_today">–</div></div>
+      <div class="card tile" data-w="burner_today" data-name="Burner today"><div class="label">Burner today</div><div class="value" id="burner_min_today">–</div></div>
+      <div class="card tile" data-w="high_fire_today" data-name="High fire today"><div class="label">High fire today</div><div class="value" id="high_fire_min_today">–</div></div>
+      <div class="card tile" data-w="board" data-name="Control board"><div class="label">Control board</div><div class="value" style="font-size:16px" id="board_status">–</div></div>
+      <div class="card tile" data-w="last_ignition" data-name="Last cycle: ignition"><div class="label">Last cycle: ignition</div><div class="value" id="cycle_ignition_s">–</div></div>
+      <div class="card tile" data-w="last_rise_low" data-name="Last cycle: low fire rise"><div class="label">Last cycle: low fire rise</div><div class="value" id="cycle_rise_low">–</div></div>
+      <div class="card tile" data-w="last_rise_high" data-name="Last cycle: high fire rise"><div class="label">Last cycle: high fire rise</div><div class="value" id="cycle_rise_high">–</div></div>
+      <div class="card tile" data-w="last_blower" data-name="Last cycle: blower"><div class="label">Last cycle: blower</div><div class="value" id="cycle_blower_a">–</div></div>
+      <div class="card wide" data-w="filter" data-name="Air filter">
+        <div class="row">
+          <div><strong>Air filter</strong> <span class="note" id="filterText">–</span></div>
+          <button class="btn small" id="filterReset">Filter changed</button>
+        </div>
+        <div class="bar" id="filterBar"><i style="width:0"></i></div>
       </div>
-      <div class="bar" id="filterBar"><i style="width:0"></i></div>
+      <div class="card wide" data-w="chart" data-name="Temperature chart" data-hide>
+        <div class="label note" style="margin-bottom:8px">Last 6 hours</div>
+        <canvas id="dashChart" style="height:200px"></canvas>
+      </div>
+    </div>
+    <div class="row" id="dashBar">
+      <span class="note" id="dashMsg"></span>
+      <button class="btn small ghost" id="dashEdit">Customize dashboard</button>
+    </div>
+    <div class="card savebar" id="dashEditBar" hidden>
+      <span class="note" style="flex:1 1 260px">Drag tiles to reorder them, or use the arrows. Hidden tiles stay listed here, faded.</span>
+      <button class="btn small ghost" id="dashReset">Reset to default</button>
+      <button class="btn small ghost" id="dashCancel">Cancel</button>
+      <button class="btn small" id="dashSave">Save</button>
     </div>
   </section>
 
@@ -246,15 +269,15 @@ function render(s) {
   $("t_flue").innerHTML = fmt(temp(s.t_flue), tUnit, 0);
   $("i_inducer").innerHTML = fmt(s.i_inducer, "A", 2);
   $("i_blower").innerHTML = fmt(s.i_blower, "A", 1);
-  $("tile_room").hidden = !s.room_fitted;
+  $("tile_room").classList.toggle("absent", !s.room_fitted);
   $("t_room").innerHTML = fmt(temp(s.t_room), tUnit);
-  $("tile_out").hidden = !s.out_fitted;
+  $("tile_out").classList.toggle("absent", !s.out_fitted);
   $("out_label").textContent = s.out_src === "weather" ? "Outdoor (Open-Meteo)" : "Outdoor";
   $("t_out").innerHTML = fmt(temp(s.t_out), tUnit);
-  $("tile_spare").hidden = !s.spare_fitted;
+  $("tile_spare").classList.toggle("absent", !s.spare_fitted);
   $("spare_name").textContent = s.spare_name || "Spare";
   $("t_spare").innerHTML = fmt(temp(s.t_spare), tUnit);
-  $("tile_co").hidden = !s.co_ppm_fitted;
+  $("tile_co").classList.toggle("absent", !s.co_ppm_fitted);
   $("co_ppm").innerHTML = fmt(s.co_ppm, "ppm", 0);
   $("cycles_today").textContent = s.cycles_today;
   $("burner_min_today").innerHTML = fmt(s.burner_min_today, "min", 0);
@@ -290,6 +313,117 @@ $("filterReset").onclick = async () => {
   alert(r.ok ? "Filter count reset." : "Sign in first: open Settings, then try again.");
 };
 
+// Dashboard layout: which Live widgets show and in what order. Saved on the board as a list of
+// widget names, hidden ones prefixed with "-". Widgets missing from a saved list (new ones after
+// a firmware update) keep their default place and visibility.
+const dash = $("dash");
+const widgets = () => [...dash.children];
+const DEFAULT_ORDER = widgets().map((w) => w.dataset.w);
+let savedLayout = "";
+function applyLayout(str) {
+  const tokens = str ? str.split(",").filter(Boolean) : [];
+  const hidden = new Set(tokens.filter((t) => t.startsWith("-")).map((t) => t.slice(1)));
+  const listed = tokens.map((t) => t.replace(/^-/, ""));
+  const byName = Object.fromEntries(widgets().map((w) => [w.dataset.w, w]));
+  // Listed widgets in saved order, each unlisted one slotted in after its default predecessor.
+  const order = listed.filter((n) => byName[n]);
+  DEFAULT_ORDER.forEach((n, i) => {
+    if (order.includes(n)) return;
+    const before = DEFAULT_ORDER.slice(0, i).reverse().find((p) => order.includes(p));
+    order.splice(before ? order.indexOf(before) + 1 : 0, 0, n);
+  });
+  for (const n of order) {
+    const w = byName[n];
+    w.classList.toggle("off", listed.includes(n) ? hidden.has(n) : w.hasAttribute("data-hide"));
+    dash.appendChild(w);
+  }
+  refreshDashChart();
+}
+const layoutString = () => widgets().map((w) => (w.classList.contains("off") ? "-" : "") + w.dataset.w).join(",");
+
+// Small temperature chart widget, redrawn each minute while it is on screen.
+function refreshDashChart() {
+  const w = dash.querySelector('[data-w="chart"]');
+  if (!w.classList.contains("off") && $("live").classList.contains("active")) drawHistory($("dashChart"), 6).catch(() => {});
+}
+setInterval(refreshDashChart, 60000);
+
+function setEditing(on) {
+  dash.classList.toggle("editing", on);
+  $("dashEditBar").hidden = !on;
+  $("dashBar").hidden = on;
+  for (const w of widgets()) {
+    w.draggable = on;
+    w.querySelector(".wbar")?.remove();
+    if (!on) continue;
+    const bar = document.createElement("div");
+    bar.className = "wbar";
+    bar.innerHTML = `<span></span><button type="button" data-a="-1" title="Move earlier">◀</button>` +
+      `<button type="button" data-a="1" title="Move later">▶</button><button type="button" data-a="vis"></button>`;
+    w.prepend(bar);
+  }
+  labelBars();
+}
+function labelBars() {
+  for (const w of widgets()) {
+    const bar = w.querySelector(".wbar");
+    if (!bar) continue;
+    // Tiles already show their name; wide cards and unfitted sensors get a caption.
+    const caption = [w.classList.contains("wide") ? w.dataset.name : "", w.classList.contains("absent") ? "Not fitted" : ""];
+    bar.querySelector("span").textContent = caption.filter(Boolean).join(" · ");
+    bar.querySelector('[data-a="vis"]').textContent = w.classList.contains("off") ? "Show" : "Hide";
+  }
+}
+dash.addEventListener("click", (e) => {
+  const b = e.target.closest(".wbar button");
+  if (!b) return;
+  const w = b.closest("[data-w]");
+  if (b.dataset.a === "vis") { w.classList.toggle("off"); refreshDashChart(); }
+  else if (b.dataset.a === "-1" && w.previousElementSibling) dash.insertBefore(w, w.previousElementSibling);
+  else if (b.dataset.a === "1" && w.nextElementSibling) dash.insertBefore(w.nextElementSibling, w);
+  labelBars();
+});
+let dragged = null;
+dash.addEventListener("dragstart", (e) => {
+  dragged = e.target.closest("[data-w]");
+  if (!dragged) return;
+  e.dataTransfer.effectAllowed = "move";
+  e.dataTransfer.setData("text/plain", dragged.dataset.w);  // Firefox won't start a drag without data
+  dragged.classList.add("dragging");
+});
+const clearDrop = () => dash.querySelectorAll(".dropto").forEach((w) => w.classList.remove("dropto"));
+dash.addEventListener("dragend", () => { dragged?.classList.remove("dragging"); dragged = null; clearDrop(); });
+// The tile under the pointer is outlined; dropping puts the dragged tile in its place.
+dash.addEventListener("dragover", (e) => {
+  const over = e.target.closest("[data-w]");
+  if (!dragged || !over || over === dragged) return;
+  e.preventDefault();
+  if (!over.classList.contains("dropto")) { clearDrop(); over.classList.add("dropto"); }
+});
+dash.addEventListener("drop", (e) => {
+  e.preventDefault();
+  const over = e.target.closest("[data-w]");
+  if (!dragged || !over || over === dragged) return;
+  const later = widgets().indexOf(over) > widgets().indexOf(dragged);
+  dash.insertBefore(dragged, later ? over.nextElementSibling : over);
+  labelBars();
+});
+$("dashEdit").onclick = () => setEditing(true);
+$("dashCancel").onclick = () => { applyLayout(savedLayout); setEditing(false); };
+$("dashReset").onclick = () => { applyLayout(""); labelBars(); };
+$("dashSave").onclick = async () => {
+  // A layout matching the default is saved as blank, so it keeps following future defaults.
+  const defaults = DEFAULT_ORDER.map((n) => (dash.querySelector(`[data-w="${n}"]`).hasAttribute("data-hide") ? "-" : "") + n).join(",");
+  const layout = layoutString() === defaults ? "" : layoutString();
+  const r = await fetch("/api/layout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ layout }) })
+    .catch(() => null);
+  if (!r?.ok) { alert("Couldn't save the layout. Sign in on the Settings tab first, then try again."); return; }
+  savedLayout = layout;
+  applyLayout(savedLayout);
+  setEditing(false);
+};
+fetch("/api/layout").then((r) => r.json()).then((j) => { savedLayout = j.layout || ""; applyLayout(savedLayout); }).catch(() => applyLayout(""));
+
 // Tabs
 let benchTimer = null;
 document.querySelectorAll("nav button").forEach((b) => b.onclick = () => {
@@ -297,7 +431,7 @@ document.querySelectorAll("nav button").forEach((b) => b.onclick = () => {
   b.classList.add("active");
   $(b.dataset.tab).classList.add("active");
   clearInterval(benchTimer);
-  ({ history: loadHistory, cycles: loadCycles, events: loadEvents, bench: startBench, settings: loadSettings })[b.dataset.tab]?.();
+  ({ live: refreshDashChart, history: loadHistory, cycles: loadCycles, events: loadEvents, bench: startBench, settings: loadSettings })[b.dataset.tab]?.();
 });
 
 function setupCanvas(c) {
@@ -315,9 +449,9 @@ document.querySelectorAll("#range button").forEach((b) => b.onclick = () => {
   historyHours = Number(b.dataset.h);
   loadHistory();
 });
-async function loadHistory() {
-  const h = await (await fetch(`/api/history?hours=${historyHours}`)).json();
-  const c = $("chart");
+const loadHistory = () => drawHistory($("chart"), historyHours);
+async function drawHistory(c, hours) {
+  const h = await (await fetch(`/api/history?hours=${hours}`)).json();
   const { ctx, col } = setupCanvas(c);
   const W = c.clientWidth, H = c.clientHeight, L = 40, B = 20;
   ctx.clearRect(0, 0, W, H);
@@ -334,7 +468,7 @@ async function loadHistory() {
     ctx.fillText(`${v}${tUnit}`, 0, y(v) + 4);
   }
   for (let i = 0; i < n; i += Math.ceil(n / 6)) {
-    if (h.t[i]) ctx.fillText(timeLabel(h.t[i], historyHours > 24), x(i), H - 4);
+    if (h.t[i]) ctx.fillText(timeLabel(h.t[i], hours > 24), x(i), H - 4);
   }
   ctx.lineWidth = 2;
   for (const [k, c] of series) {
@@ -774,7 +908,7 @@ async function loadSettings() {
   const tabs = SETTINGS_TABS.map((t) => ({ ...t, html: t.sections.map(section).join("") }));
   // Anything the firmware sends that isn't listed above still shows up, so new settings are never hidden.
   const extra = [...Object.keys(cfg).filter((k) => k !== "model"), ...Object.keys(cfg.model || {}).map((k) => `model.${k}`)]
-    .filter((k) => !placed.has(k)).map((k) => [k, k]);
+    .filter((k) => !placed.has(k) && k !== "dashLayout").map((k) => [k, k]);
   if (extra.length) tabs.push({ id: "other", name: "Other", html: section({ fields: extra }) });
   $("settingsTabs").innerHTML = tabs.map((t) => `<button type="button" data-st="${t.id}">${attr(t.name)}</button>`).join("");
   $("settingsForm").innerHTML = tabs.map((t) => `<div class="spanel" data-panel="${t.id}"><div class="card">${t.html}</div></div>`).join("") +
