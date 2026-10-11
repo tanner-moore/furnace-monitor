@@ -19,9 +19,9 @@ The full build plan (sensors, wiring, safety notes) is in the project's [build p
 | Blower current | Split-core CT, 0-10 V out (default 2 A/V) | AI 2 |
 | Control board LED | Light-to-voltage sensor over the 50A51 LED | AI 3 |
 | Supply / return / flue air | PT100, 3-wire | PT100 1 / 2 / 3 |
-| CO alarm (optional) | Relay contact of a CO alarm, e.g. System Sensor CO1224TR on 12/24 VDC | DI 3 (set `diCo` = 3) |
+| CO alarm (optional) | Relay contact of a CO alarm, e.g. System Sensor CO1224TR on 12/24 VDC | DI 3 (tick CO alarm contact on the General tab) |
 
-Inputs left at 0 in settings are treated as not fitted. For the CO alarm, set `coOnOpen` if its contact opens on alarm. It adds CO alerts to Home Assistant; it does not replace the CO alarms the house already needs.
+Untick any sensor that isn't fitted on the Settings General tab. That saves its input as 0, which the firmware treats as not fitted, and greys out its settings on the other tabs. For the CO alarm, tick "CO alarm opens the contact" on the Wiring tab if its contact opens on alarm. It adds CO alerts to Home Assistant; it does not replace the CO alarms the house already needs.
 
 ## What it tracks
 
