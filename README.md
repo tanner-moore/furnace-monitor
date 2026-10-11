@@ -41,7 +41,11 @@ The Sensirion SDP810 (I2C address 0x25) and SDP811 (0x26) share the CO16's I2C b
 - **Per-cycle health**: time to ignition, settled temperature rise on low and high fire, peak flue temperature, and average inducer and blower current. Trends in these show a clogging filter or a tiring motor long before anything fails.
 - **Totals** (cycles, failed trials, burner, high-fire and blower hours) that survive restarts.
 - **Air filter**: blower hours since the last change, against `filterLifeHours` (default 500). Press "Filter changed" on the web page or in Home Assistant after replacing it.
-- **Dirty filter**: from the pressure sensor across the filter (`filterPressSensor`, default sensor 1). Each minute the blower runs, after its first minute, gives an average pressure drop. Five such minutes in a row at or above `filterDirtyPa` (Alerts tab, default 0.25 in. w.c.) flag the filter dirty: an event, the Live tab, the screen and a Home Assistant "Filter dirty" problem sensor. Five minutes below 90% of the limit, or pressing "Filter changed", clears it. The drop rises with blower speed, so the highest speed reaches the limit first. A good limit is about twice what a new filter reads at that speed.
+- **Dirty filter**: from the pressure sensor across the filter (`filterPressSensor`, default sensor 1). Each minute the blower runs, after its first minute, gives an average pressure drop. A blower run's high reading is its highest such minute. Two modes on the Alerts tab (`filterMode`):
+  - **Auto** (default): after a new filter, the firmware learns its clean reading as the highest run high over the first 10 blower runs of at least 4 minutes, preferring the fastest blower speed seen. The filter is dirty once five running minutes in a row reach twice that, and clean again after five under 90% of it. A new filter is detected by itself when two blower runs in a row, at the same speed as the latest one (blower current within 10%), read under 60% of it; that needs the blower current sensor, since without it a slower speed looks like a cleaner filter. Pressing "Filter changed" also starts a new filter. If the blower's fastest speed doesn't run during the first 10 runs (mild weather), the learned reading is low; press "Filter changed" again on a cold day, or use manual.
+  - **Manual**: dirty when a running minute is at or over `filterDirtyPa` (default 0.25 in. w.c.), clean when one is under it.
+
+  Dirty shows as an event, on the Live tab, on the screen and as a Home Assistant "Filter dirty" problem sensor.
 
 ## Build and flash
 

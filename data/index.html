@@ -346,8 +346,11 @@ function render(s) {
     : `${used.toFixed(0)} blower hours`;
   if (s.filter_press) {
     const dp = pressShown(s.filter_dp), lim = pressShown(s.filter_dirty_pa), dec = pressInwc ? 2 : 0;
-    $("filterText").textContent += ` · pressure drop ${dp == null ? "–" : dp.toFixed(dec)} of ${lim.toFixed(dec)} ${pressLabel()}` +
-      (s.filter_dirty ? " · dirty, change it now" : "");
+    const now = dp == null ? "–" : dp.toFixed(dec);
+    $("filterText").textContent += lim == null
+      ? ` · pressure drop ${now} ${pressLabel()} · learning the new filter, ${s.filter_learn_left} blower runs to go`
+      : ` · pressure drop ${now} of ${lim.toFixed(dec)} ${pressLabel()}${s.filter_mode === "auto" ? " (auto)" : ""}` +
+        (s.filter_dirty ? " · dirty, change it now" : "");
   }
   $("filterText").classList.toggle("bad", !!s.filter_dirty);
   $("filterBar").classList.toggle("due", !!s.filter_due || !!s.filter_dirty);
@@ -911,7 +914,8 @@ const SETTINGS_TABS = [
     { title: "Air filter", fields: [
       ["filterLifeHours", "Change the filter every", "Counted in blower running hours", "h"],
       ["filterPressSensor", "Dirty-filter alarm uses", "The pressure sensor across the filter", "psensor"],
-      ["filterDirtyPa", "Filter dirty at or above", "Pressure drop with the blower running, for five running minutes. About twice a new filter's reading is a common point to change it", "press"],
+      ["filterMode", "Dirty-filter limit", "Auto learns each new filter's reading over its first 10 blower runs and flags it dirty at twice that. It also spots a new filter by itself when the pressure drop falls sharply, or press Filter changed", "fmode"],
+      ["filterDirtyPa", "Manual: filter dirty at or above", "Pressure drop with the blower running. Under it counts as clean", "press"],
     ] },
   ] },
   { id: "display", name: "Screen", sections: [
@@ -984,7 +988,8 @@ function applySensors() {
   }
   // The dirty-filter limit needs its pressure sensor switched on.
   const fs = Number(formField("filterPressSensor")?.value);
-  if (!fs || document.querySelector(`[data-sensor="aiPress${fs}"]`)?.checked === false) off.add("filterDirtyPa");
+  if (!fs || document.querySelector(`[data-sensor="aiPress${fs}"]`)?.checked === false) off.add("filterMode").add("filterDirtyPa");
+  if (formField("filterMode")?.value !== "manual") off.add("filterDirtyPa");
   document.querySelectorAll("#settingsForm [data-def]").forEach((el) => {
     el.disabled = off.has(el.name);
     el.closest("label").classList.toggle("off", el.disabled);
@@ -1079,7 +1084,7 @@ async function loadSettings() {
     if (kind !== "secret" && v === undefined) return "";
     const isTemp = kind === "temp" || kind === "dtemp";
     const unit = isTemp ? `<span class="tu">${settingsUnit()}</span>` : kind === "press" ? `<span class="pu">${settingsPressUnit()}</span>`
-      : ["tz", "secret", "units", "punits", "ptype", "psensor"].includes(kind) ? "" : kind;
+      : ["tz", "secret", "units", "punits", "ptype", "psensor", "fmode"].includes(kind) ? "" : kind;
     const name = `${attr(label)}${unit ? ` (${unit})` : ""}${hint ? `<span class="hint">${attr(hint)}</span>` : ""}`;
     if (kind === "secret") return `<label><span>${name}</span><input type="password" name="${k}" placeholder="unchanged" autocomplete="new-password"></label>`;
     let input;
@@ -1087,6 +1092,8 @@ async function loadSettings() {
     else if (kind === "units") input = `<select name="${k}" data-def>${[["F", "°F (Fahrenheit)"], ["C", "°C (Celsius)"]]
       .map(([u, n]) => `<option value="${u}" ${u === v ? "selected" : ""}>${n}</option>`).join("")}</select>`;
     else if (kind === "ptype") input = `<select name="${k}" data-def>${[["sdp810", "Sensirion SDP810 (I2C 0x25)"], ["sdp811", "Sensirion SDP811 (I2C 0x26)"], ["ai", "0-10 V transmitter"]]
+      .map(([u, n]) => `<option value="${u}" ${u === v ? "selected" : ""}>${n}</option>`).join("")}</select>`;
+    else if (kind === "fmode") input = `<select name="${k}" data-def>${[["auto", "Auto: twice the new filter's reading"], ["manual", "Manual: a set value"]]
       .map(([u, n]) => `<option value="${u}" ${u === v ? "selected" : ""}>${n}</option>`).join("")}</select>`;
     else if (kind === "psensor") input = `<select name="${k}" data-num="true" data-kind="" data-def>${[[0, "Off"], ...[1, 2, 3].map((i) => [i, `Sensor ${i}: ${cfg[`press${i}Name`]}`])]
       .map(([u, n]) => `<option value="${u}" ${u === v ? "selected" : ""}>${attr(n)}</option>`).join("")}</select>`;
@@ -1137,7 +1144,7 @@ async function loadSettings() {
     markField(el);
   });
   document.querySelectorAll("#settingsForm [data-sensor]").forEach((b) => b.onchange = () => toggleSensor(b));
-  for (const k of ["press1Type", "press2Type", "press3Type", "filterPressSensor"]) formField(k)?.addEventListener("change", applySensors);
+  for (const k of ["press1Type", "press2Type", "press3Type", "filterPressSensor", "filterMode"]) formField(k)?.addEventListener("change", applySensors);
   document.querySelectorAll("#settingsForm [data-sreset]").forEach((b) => b.onclick = () => {
     const box = document.querySelector(`[data-sensor="${b.dataset.sreset}"]`);
     box.checked = !!Number(defaultFor(box.dataset.sensor));

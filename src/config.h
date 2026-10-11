@@ -81,9 +81,11 @@ struct Config {
 
   // Air filter: blower hours between changes.
   uint16_t filterLifeHours = 500;
-  // Dirty filter: the pressure sensor (1-3, 0 = off) that reads the drop across the filter, and
-  // the drop, with the blower running, that counts as dirty.
+  // Dirty filter: the pressure sensor (1-3, 0 = off) that reads the drop across the filter. In
+  // "auto" mode the filter is dirty at twice a new filter's learned reading; in "manual" mode at
+  // filterDirtyPa or over, with the blower running.
   uint8_t filterPressSensor = 1;
+  String filterMode = "auto";
   float filterDirtyPa = 62.27f;  // 0.25 in. w.c.
 
   // SD card logging (minute samples, cycles and events) and the built-in screen.

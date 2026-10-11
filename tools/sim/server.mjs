@@ -90,8 +90,10 @@ function absorb(s) {
                            p2_name: "TESP", p3_name: "Pressure 3", press_unit: "inwc" });
     // The firmware keeps the last minute average with the blower running; the latest reading will do here.
     if (s.blower) lastFilterDp = state.p1;
-    Object.assign(state, { filter_press: 1, filter_dp: lastFilterDp, filter_dirty_pa: CONFIG.filterDirtyPa,
-                           filter_dirty: lastFilterDp != null && lastFilterDp >= CONFIG.filterDirtyPa });
+    // Auto mode: pretend the new filter read 0.13 in. w.c. (32 Pa), so it is dirty at 64 Pa.
+    const limit = CONFIG.filterMode === "manual" ? CONFIG.filterDirtyPa : 64;
+    Object.assign(state, { filter_press: 1, filter_mode: CONFIG.filterMode, filter_learn_left: 0, filter_dp: lastFilterDp,
+                           filter_dirty_pa: limit, filter_dirty: lastFilterDp != null && lastFilterDp >= limit });
   }
 }
 
@@ -128,7 +130,7 @@ const CONFIG = {
   aiOutdoor: 0, outdoorLowC: -40, outdoorHighC: 60, weatherOn: false, weatherLat: 0, weatherLon: 0, dashLayout: "", dashChart: "",
   aiPress1: 0, aiPress2: 0, aiPress3: 0, press1Name: "Filter pressure drop", press2Name: "TESP", press3Name: "Pressure 3",
   press1LowPa: 0, press1HighPa: 249.09, press2LowPa: 0, press2HighPa: 498.18, press3LowPa: 0, press3HighPa: 249.09, pressUnit: "inwc",
-  press1Type: "sdp810", press2Type: "sdp811", press3Type: "ai", filterPressSensor: 1, filterDirtyPa: 62.27,
+  press1Type: "sdp810", press2Type: "sdp811", press3Type: "ai", filterPressSensor: 1, filterMode: "auto", filterDirtyPa: 62.27,
   spareName: "Spare",
   model: { inducerOnAmps: 0.3, inducerHighAmps: 1.2, blowerOnAmps: 1, flameConfirmS: 5, ignitionTimeoutS: 90,
            shortCycleS: 180, blowerDelayS: 90, settleS: 300, minDeltaTC: 15, maxSupplyC: 85, minFlueRiseC: 10,

@@ -153,6 +153,70 @@ static void saveTotals() {
   prefs.putUInt("filterAt", snap.filterChangedEpoch);
 }
 
+// --- dirty filter, auto mode ---------------------------------------------
+// A blower run's high reading is its highest minute average of the filter's pressure drop. A new
+// filter's clean reading is the highest run high over its first kFilterLearnRuns runs, preferring
+// the fastest blower speed seen (by blower current); auto mode calls the filter dirty at twice that.
+// A new filter is detected when two runs in a row at the same speed as the latest reference run
+// (blower current within 10%) read under 60% of it. That needs the blower current sensor, since
+// without it a slower blower speed looks the same as a cleaner filter.
+static constexpr uint8_t kFilterLearnRuns = 10;
+static constexpr uint16_t kFilterMinRunMin = 3;  // runs with fewer averaged minutes don't count
+static uint8_t filterLearnLeft = kFilterLearnRuns;
+static float filterBasePa = 0, filterBaseA = 0;  // learned clean reading, and the blower current with it
+static float filterRefPa = 0, filterRefA = 0;    // latest run high at the fastest speed
+static uint8_t filterDropRuns = 0, filterOverMin = 0, filterUnderMin = 0;
+static bool filterNewDetected = false;
+
+static void saveFilterBase() {
+  prefs.putUChar("fLearn", filterLearnLeft);
+  prefs.putFloat("fBase", filterBasePa);
+  prefs.putFloat("fBaseA", filterBaseA);
+}
+
+// A new filter, from the button or detected: restart its hours and relearn its clean reading.
+// Call with the lock held.
+static void filterChangedLocked(uint32_t epoch, const char* why) {
+  model.resetFilter();
+  snap.filterChangedEpoch = epoch;
+  snap.filterDirty = false;
+  filterOverMin = filterUnderMin = 0;
+  filterLearnLeft = kFilterLearnRuns;
+  filterBasePa = filterBaseA = 0;
+  filterRefPa = filterRefA = 0;
+  filterDropRuns = 0;
+  saveTotals();
+  saveFilterBase();
+  addEventLocked(why);
+}
+
+// Call with the lock held, at the end of each blower run long enough to count.
+static void filterRunEnded(float highPa, float highA, char* buf, size_t len) {
+  const bool haveAmps = config.aiBlower && highA > 0;
+  if (filterLearnLeft) {
+    const bool faster = haveAmps && highA > filterBaseA * 1.1f;
+    const bool sameSpeed = !haveAmps || highA >= filterBaseA * 0.9f;
+    if (faster || (sameSpeed && highPa > filterBasePa)) filterBasePa = highPa, filterBaseA = highA;
+    if (--filterLearnLeft == 0) {
+      snprintf(buf, len, "new filter reads %.0f Pa; dirty at %.0f Pa", filterBasePa, 2.0f * filterBasePa);
+      addEventLocked(buf);
+    }
+    saveFilterBase();
+  }
+  if (!haveAmps) return;
+  if (highA > filterRefA * 1.1f) {  // a faster speed becomes the reference
+    filterRefPa = highPa, filterRefA = highA;
+    filterDropRuns = 0;
+  } else if (highA >= filterRefA * 0.9f) {  // same speed; slower runs aren't comparable
+    if (highPa < 0.6f * filterRefPa) {
+      if (++filterDropRuns >= 2 && !filterLearnLeft) filterNewDetected = true;
+    } else {
+      filterRefPa = highPa, filterRefA = highA;
+      filterDropRuns = 0;
+    }
+  }
+}
+
 // --- one-minute averages --------------------------------------------------
 
 struct MinuteAcc {
@@ -210,11 +274,11 @@ static void task(void*) {
   uint32_t lastAnalogMs = 0, lastRtdMs = 0, lastSampleMs = 0, lastSaveMs = 0;
   int lastYday = prefs.getInt("yday", -1);
   bool rtcWritten = false, filterDueWas = false;
-  // Dirty filter: minute averages of the filter's pressure drop while the blower runs.
+  // Dirty filter: minute averages of the filter's pressure drop (and blower current) while the
+  // blower runs, and each run's highest minute.
   uint32_t lastFilterMs = 0;
-  uint16_t filterRunS = 0, filterN = 0;
-  uint8_t filterOverMin = 0, filterUnderMin = 0;
-  float filterSum = 0;
+  uint16_t filterRunS = 0, filterN = 0, filterRunMin = 0;
+  float filterSum = 0, filterAmpSum = 0, filterRunHighPa = 0, filterRunHighA = 0;
   MinuteAcc acc;
   acc.reset(0);
   char buf[96];
@@ -323,13 +387,8 @@ static void task(void*) {
 
     if (filterResetPending) {
       filterResetPending = false;
-      model.resetFilter();
-      snap.filterChangedEpoch = (uint32_t)epoch;
+      filterChangedLocked((uint32_t)epoch, "filter changed");
       filterDueWas = false;
-      snap.filterDirty = false;
-      filterOverMin = filterUnderMin = 0;
-      saveTotals();
-      addEventLocked("filter changed");
     }
 
     const furnace::Phase before = model.state().phase;
@@ -363,41 +422,61 @@ static void task(void*) {
     filterDueWas = filterDue;
 
     // Dirty filter, checked once a second. Each minute of blower running (after its first minute,
-    // while the airflow settles) gives one average. Five averages in a row at or above the limit
-    // flag the filter dirty; five below 90% of it clear the flag. The count carries over between
-    // blower runs, so short runs still add up.
+    // while the airflow settles) gives one average. Manual mode: dirty when an average is at or
+    // over filterDirtyPa, clean when one is under it. Auto mode: the limit is twice the new
+    // filter's learned reading; five averages in a row at or above it flag the filter dirty and
+    // five below 90% of it clear the flag, the count carrying over between blower runs.
     if (now - lastFilterMs >= 1000) {
       lastFilterMs = now;
       const uint8_t fs = config.filterPressSensor;
       const uint8_t fsAi[3] = {config.aiPress1, config.aiPress2, config.aiPress3};
-      const bool fsOn = fs >= 1 && fs <= 3 && fsAi[fs - 1] && config.filterDirtyPa > 0;
+      const bool fsOn = fs >= 1 && fs <= 3 && fsAi[fs - 1];
       const float dp = fsOn ? pressPa[fs - 1] : NAN;
       // Without a blower current sensor, any real pressure drop means the blower is running.
       const bool running = config.aiBlower ? st.blowerOn : dp > 5.0f;
-      if (!fsOn) {
+      const bool autoMode = config.filterMode != "manual";
+      const float limit = autoMode ? (filterLearnLeft ? NAN : 2.0f * filterBasePa) : config.filterDirtyPa;
+      snap.filterLimitPa = fsOn ? limit : NAN;
+      snap.filterLearnLeft = autoMode && fsOn ? filterLearnLeft : 0;
+      if (!fsOn || !(limit > 0)) {
         snap.filterDirty = false;
-        snap.filterDpPa = NAN;
         filterOverMin = filterUnderMin = 0;
       }
+      if (!fsOn) snap.filterDpPa = NAN;
       if (!fsOn || !running || isnan(dp)) {
+        // A blower run just ended: its highest minute average is the run's high reading.
+        if (autoMode && fsOn && filterRunMin >= kFilterMinRunMin) filterRunEnded(filterRunHighPa, filterRunHighA, buf, sizeof buf);
         filterRunS = filterN = 0;
-        filterSum = 0;
+        filterSum = filterAmpSum = 0;
+        filterRunMin = 0;
+        filterRunHighPa = filterRunHighA = 0;
       } else if (++filterRunS > 60) {
         filterSum += dp;
+        filterAmpSum += isnan(in.blowerAmps) ? 0 : in.blowerAmps;
         if (++filterN >= 60) {
-          const float avg = filterSum / filterN;
-          filterSum = 0;
+          const float avg = filterSum / filterN, amps = filterAmpSum / filterN;
+          filterSum = filterAmpSum = 0;
           filterN = 0;
           snap.filterDpPa = avg;
-          if (avg >= config.filterDirtyPa) {
+          filterRunMin++;
+          if (avg > filterRunHighPa) filterRunHighPa = avg, filterRunHighA = amps;
+          if (!autoMode && limit > 0) {
+            // Manual: dirty at or over the set value, clean under it.
+            const bool dirty = avg >= limit;
+            if (dirty != snap.filterDirty) {
+              snap.filterDirty = dirty;
+              if (dirty) snprintf(buf, sizeof buf, "filter dirty: pressure drop %.0f Pa, limit %.0f Pa", avg, limit);
+              addEventLocked(dirty ? buf : "filter pressure drop back below the limit");
+            }
+          } else if (limit > 0 && avg >= limit) {
             filterUnderMin = 0;
             if (filterOverMin < 5) filterOverMin++;
             if (filterOverMin >= 5 && !snap.filterDirty) {
               snap.filterDirty = true;
-              snprintf(buf, sizeof buf, "filter dirty: pressure drop %.0f Pa, limit %.0f Pa", avg, config.filterDirtyPa);
+              snprintf(buf, sizeof buf, "filter dirty: pressure drop %.0f Pa, limit %.0f Pa", avg, limit);
               addEventLocked(buf);
             }
-          } else if (avg < 0.9f * config.filterDirtyPa) {
+          } else if (limit > 0 && avg < 0.9f * limit) {
             filterOverMin = 0;
             if (filterUnderMin < 5) filterUnderMin++;
             if (filterUnderMin >= 5 && snap.filterDirty) {
@@ -407,6 +486,11 @@ static void task(void*) {
           }
         }
       }
+    }
+    if (filterNewDetected) {
+      filterNewDetected = false;
+      filterChangedLocked((uint32_t)epoch, "new filter detected from its pressure drop");
+      filterDueWas = false;
     }
 
     snap.uptimeS = now / 1000;
@@ -547,6 +631,9 @@ void begin() {
     model.restoreTotals(totals);
   }
   snap.filterChangedEpoch = prefs.getUInt("filterAt", 0);
+  filterLearnLeft = prefs.getUChar("fLearn", kFilterLearnRuns);
+  filterBasePa = prefs.getFloat("fBase", 0);
+  filterBaseA = prefs.getFloat("fBaseA", 0);
 
   // Read recent history, cycles and events back from the SD card. Nothing else
   // is running yet, so the rings need no lock here.
@@ -659,13 +746,15 @@ void stateJson(const Snapshot& s, JsonObject o) {
   }
   o["filter_changed"] = s.filterChangedEpoch;
   // Dirty filter from its pressure drop: the sensor used (0 = off), the last minute average with
-  // the blower running, and the limit, all in Pa.
+  // the blower running, and the limit in use (null while auto mode is still learning), in Pa.
   const uint8_t fsAi[3] = {config.aiPress1, config.aiPress2, config.aiPress3};
   const uint8_t fs = config.filterPressSensor >= 1 && config.filterPressSensor <= 3 &&
-                     fsAi[config.filterPressSensor - 1] && config.filterDirtyPa > 0 ? config.filterPressSensor : 0;
+                     fsAi[config.filterPressSensor - 1] ? config.filterPressSensor : 0;
   o["filter_press"] = fs;
+  o["filter_mode"] = config.filterMode == "manual" ? "manual" : "auto";
+  o["filter_learn_left"] = s.filterLearnLeft;  // auto mode: blower runs still to learn the clean reading
   putNum(o, "filter_dp", s.filterDpPa);
-  putNum(o, "filter_dirty_pa", config.filterDirtyPa);
+  putNum(o, "filter_dirty_pa", s.filterLimitPa);
   o["filter_dirty"] = s.filterDirty;
 
   o["co_alarm"] = s.in.coAlarm;
