@@ -37,9 +37,17 @@ struct Config {
   float blowerAmpsPerVolt = 2.0f;   // e.g. 0-20 A CT with 0-10 V output
   float ledOnVolts = 2.0f;          // light sensor threshold
 
+  // Optional 0-10 V transmitters on spare analog inputs.
+  uint8_t aiCo = 0;                 // CO sensor, ppm (AI 4 suggested)
+  float coPpmPerVolt = 25.0f;       // e.g. 0-250 ppm sensor with 0-10 V output
+  float coAlertPpm = 35.0f;         // CO alert at or above this level
+  uint8_t aiRoom = 0;               // room temperature sensor (AI 5 suggested)
+  float roomLowC = 0.0f, roomHighC = 50.0f;  // what the room sensor reads at 0 V and at 10 V
+
   // PT100 channels (1-4, 0 = not fitted) and calibration offsets
   uint8_t rtdSupply = 1, rtdReturn = 2, rtdFlue = 3, rtdSpare = 0;
   float offsetSupply = 0, offsetReturn = 0, offsetFlue = 0, offsetSpare = 0;
+  String spareName = "Spare";  // shown on the dashboard and in Home Assistant
 
   // Control board preset last picked on the settings page. Only the page uses it: it decides
   // which timing values count as defaults there.

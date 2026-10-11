@@ -119,7 +119,14 @@ static void publishDiscovery() {
   reset["cmd_t"] = topicFilterReset;
   reset["pl_prs"] = "PRESS";
 
-  if (config.diCo) binary(cmps, "co_alarm", "Carbon monoxide", "carbon_monoxide");
+  if (config.diCo || config.aiCo) binary(cmps, "co_alarm", "Carbon monoxide", "carbon_monoxide");
+  if (config.aiCo) sensor(cmps, "co_ppm", "Carbon monoxide level", "ppm", "carbon_monoxide", "measurement");
+  if (config.aiRoom) sensor(cmps, "t_room", "Room temperature", "°C", "temperature", "measurement");
+  if (config.rtdSpare) {
+    static String spareTitle;
+    spareTitle = config.spareName + " temperature";
+    sensor(cmps, "t_spare", spareTitle.c_str(), "°C", "temperature", "measurement");
+  }
 
   JsonObject board = sensor(cmps, "board_status", "Control board status", nullptr, nullptr, nullptr);
   board["val_tpl"] = "{{ value_json.board_status }}";

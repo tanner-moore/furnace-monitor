@@ -192,7 +192,7 @@ static bool rtdUsed(uint8_t ch) {
 
 static void task(void*) {
   furnace::Inputs in;
-  float spare = NAN, ledV = NAN;
+  float spare = NAN, ledV = NAN, roomC = NAN, coPpm = NAN;
   uint16_t raw = 0;
   bool inputsOk = false;
   uint8_t rtdStep = 0, benchAi = 0;
@@ -220,7 +220,9 @@ static void task(void*) {
     in.g = inputOn(raw, config.diG);
     in.mvl = inputOn(raw, config.diMvl);
     in.mvh = inputOn(raw, config.diMvh);
-    in.coAlarm = config.diCo && inputOn(raw, config.diCo) != config.coOnOpen;
+    // CO alert from the alarm's relay contact, or from the CO sensor's reading.
+    in.coAlarm = (config.diCo && inputOn(raw, config.diCo) != config.coOnOpen) ||
+                 (!isnan(coPpm) && coPpm >= config.coAlertPpm);
 
     // LED light sensor every pass, so flashes are not missed.
     if (config.aiLed) {
@@ -234,6 +236,10 @@ static void task(void*) {
       lastAnalogMs = now;
       in.inducerAmps = config.aiInducer ? co16::readAnalogVolts(config.aiInducer) * config.inducerAmpsPerVolt : NAN;
       in.blowerAmps = config.aiBlower ? co16::readAnalogVolts(config.aiBlower) * config.blowerAmpsPerVolt : NAN;
+      coPpm = config.aiCo ? co16::readAnalogVolts(config.aiCo) * config.coPpmPerVolt : NAN;
+      roomC = config.aiRoom
+                  ? config.roomLowC + co16::readAnalogVolts(config.aiRoom) / 10.0f * (config.roomHighC - config.roomLowC)
+                  : NAN;
     }
 
     // Bench mode: one more analog input per pass, all 16 in under a second.
@@ -268,7 +274,8 @@ static void task(void*) {
 
     in.sensorFault = !inputsOk || (config.rtdSupply && isnan(in.supplyC)) || (config.rtdReturn && isnan(in.returnC)) ||
                      (config.rtdFlue && isnan(in.flueC)) || (config.aiInducer && isnan(in.inducerAmps)) ||
-                     (config.aiBlower && isnan(in.blowerAmps));
+                     (config.aiBlower && isnan(in.blowerAmps)) || (config.aiCo && isnan(coPpm)) ||
+                     (config.aiRoom && isnan(roomC));
 
     const time_t epoch = nowEpoch();
     xSemaphoreTake(lock, portMAX_DELAY);
@@ -328,6 +335,8 @@ static void task(void*) {
     snap.in = in;
     snap.st = st;
     snap.spareC = spare;
+    snap.roomC = roomC;
+    snap.coPpm = coPpm;
     snap.ledVolts = ledV;
     snap.rawInputs = raw;
     snap.inputsOk = inputsOk;
@@ -492,6 +501,12 @@ void stateJson(const Snapshot& s, JsonObject o) {
   putNum(o, "delta_t", s.st.deltaTC);
   putNum(o, "t_flue", s.in.flueC);
   putNum(o, "t_spare", s.spareC);
+  putNum(o, "t_room", s.roomC);
+  putNum(o, "co_ppm", s.coPpm, 0);
+  o["spare_name"] = config.spareName;
+  o["spare_fitted"] = config.rtdSpare != 0;
+  o["room_fitted"] = config.aiRoom != 0;
+  o["co_ppm_fitted"] = config.aiCo != 0;
   putNum(o, "i_inducer", s.in.inducerAmps, 2);
   putNum(o, "i_blower", s.in.blowerAmps, 2);
   o["cycles_today"] = s.st.cyclesToday;
@@ -530,7 +545,7 @@ void stateJson(const Snapshot& s, JsonObject o) {
   o["filter_changed"] = s.filterChangedEpoch;
 
   o["co_alarm"] = s.in.coAlarm;
-  o["co_fitted"] = config.diCo != 0;
+  o["co_fitted"] = config.diCo != 0 || config.aiCo != 0;
   o["problem"] = s.st.alerts != 0;
   o["alerts"] = furnace::alertNames(s.st.alerts, alerts, sizeof alerts);
   o["board_code"] = s.in.boardCode;
