@@ -226,7 +226,7 @@ const $ = (id) => document.getElementById(id);
 const fmt = (v, unit, d = 1) => typeof v !== "number" || !isFinite(v) ? "–" : `${v.toFixed(d)}<span class="unit"> ${unit}</span>`;
 // Temperature units come from the board's setting (General tab); the browser's language is only
 // the guess until the first state arrives.
-let useF = (navigator.language || "").startsWith("en-US");
+let useF = false;
 let tUnit = useF ? "°F" : "°C";
 const setUnits = (f) => { useF = f; tUnit = f ? "°F" : "°C"; };
 const temp = (c) => c == null ? null : useF ? c * 9 / 5 + 32 : c;

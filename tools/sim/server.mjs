@@ -93,7 +93,7 @@ const CONFIG = {
   mqttHost: "homeassistant.local", mqttPort: 1883, mqttUser: "furnace", baseTopic: "furnace/co16",
   discoveryPrefix: "homeassistant", webUser: "admin", diW1: 1, diW2: 2, diG: 4, diMvl: 5, diMvh: 6,
   diCo: 0, coOnOpen: false, filterLifeHours: 500, sdLogging: true, display: true, displayWidth: 240,
-  displayHeight: 240, displayRotation: 0, tempUnit: "F",
+  displayHeight: 240, displayRotation: 0, tempUnit: "C",
   aiInducer: 1, aiBlower: 2, aiLed: 3, inducerAmpsPerVolt: 0.5, blowerAmpsPerVolt: 2, ledOnVolts: 2,
   rtdSupply: 1, rtdReturn: 2, rtdFlue: 3, rtdSpare: 0, offsetSupply: 0, offsetReturn: 0, offsetFlue: 0, offsetSpare: 0,
   boardPreset: "generic", aiCo: 0, coPpmPerVolt: 25, coAlertPpm: 35, aiRoom: 0, roomLowC: 0, roomHighC: 50,

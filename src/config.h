@@ -55,7 +55,7 @@ struct Config {
 
   // Temperature units for the web page and the screen: "F" or "C". MQTT always sends °C and
   // Home Assistant converts to its own units.
-  String tempUnit = "F";
+  String tempUnit = "C";
 
   // Air filter: blower hours between changes.
   uint16_t filterLifeHours = 500;
