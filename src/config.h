@@ -41,6 +41,10 @@ struct Config {
   uint8_t rtdSupply = 1, rtdReturn = 2, rtdFlue = 3, rtdSpare = 0;
   float offsetSupply = 0, offsetReturn = 0, offsetFlue = 0, offsetSpare = 0;
 
+  // Control board preset last picked on the settings page. Only the page uses it: it decides
+  // which timing values count as defaults there.
+  String boardPreset = "generic";
+
   // Air filter: blower hours between changes.
   uint16_t filterLifeHours = 500;
 

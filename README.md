@@ -6,7 +6,7 @@ Custom firmware for a KinCony CO16 (ESP32-S3) that watches a Trane TUD120R954H4 
 
 The full build plan (sensors, wiring, safety notes) is in the project's [build plan](https://claude.ai/code/artifact/326b1ad6-307e-4024-a8b6-6d7a18347500).
 
-## Inputs (defaults, changeable on the Settings page)
+## Inputs (defaults, changeable on the Settings Wiring tab)
 
 | Signal | Pickup | CO16 input |
 | --- | --- | --- |
@@ -19,9 +19,9 @@ The full build plan (sensors, wiring, safety notes) is in the project's [build p
 | Blower current | Split-core CT, 0-10 V out (default 2 A/V) | AI 2 |
 | Control board LED | Light-to-voltage sensor over the 50A51 LED | AI 3 |
 | Supply / return / flue air | PT100, 3-wire | PT100 1 / 2 / 3 |
-| CO alarm (optional) | Relay contact of a CO alarm, e.g. System Sensor CO1224TR on 12/24 VDC | DI 3 (set `diCo` = 3) |
+| CO alarm (optional) | Relay contact of a CO alarm, e.g. System Sensor CO1224TR on 12/24 VDC | DI 3 (tick CO alarm contact on the General tab) |
 
-Inputs left at 0 in settings are treated as not fitted. For the CO alarm, set `coOnOpen` if its contact opens on alarm. It adds CO alerts to Home Assistant; it does not replace the CO alarms the house already needs.
+Untick any sensor that isn't fitted on the Settings General tab. That saves its input as 0, which the firmware treats as not fitted, and greys out its settings on the other tabs. For the CO alarm, tick "CO alarm opens the contact" on the Wiring tab if its contact opens on alarm. It adds CO alerts to Home Assistant; it does not replace the CO alarms the house already needs.
 
 ## What it tracks
 
@@ -39,13 +39,13 @@ pio run -e co16 -t upload     # firmware over USB-C (hold the download button if
 pio run -e co16 -t uploadfs   # web page
 ```
 
-After the first flash, updates can go through the web page (Settings, Firmware update) using `firmware.bin` and `littlefs.bin` from `.pio/build/co16/` or from the CI build artifacts.
+After the first flash, updates can go through the web page (Settings, Login and firmware tab) using `firmware.bin` and `littlefs.bin` from `.pio/build/co16/` or from the CI build artifacts.
 
 ## First start
 
 1. Plug Ethernet into the CO16. It gets an address by DHCP and answers at `http://furnace-co16.local/`.
 2. With no Ethernet (and no Wi-Fi configured) it opens a `furnace-setup` access point after a minute; browse to `http://192.168.4.1/`.
-3. Open Settings (default login `admin` / `furnace`, change it), pick your time zone, set the MQTT broker, and save. The board restarts and appears in Home Assistant as **Furnace**.
+3. Open Settings (default login `admin` / `furnace`; change it on the Login and firmware tab), pick your time zone on the Network tab, set the MQTT broker on the Home Assistant tab, and save. The board restarts and appears in Home Assistant as **Furnace**.
 
 ## MQTT
 
@@ -70,11 +70,11 @@ With a card in the CO16's slot (FAT32), the board writes one-minute averages to 
 
 ## Bench tab
 
-For first power-up and calibration: all 16 digital inputs, all 16 analog input voltages, each PT100 channel's resistance and fault bits, the control board LED's measured flash timing, and which on-board chips answered. Type a clamp meter reading into the CT helper and it gives the `AmpsPerVolt` value to save in Settings.
+For first power-up and calibration: all 16 digital inputs, all 16 analog input voltages, each PT100 channel's resistance and fault bits, the control board LED's measured flash timing, and which on-board chips answered. Type a clamp meter reading into the CT helper and it gives the `AmpsPerVolt` value to save on the Settings Calibration tab.
 
 ## Screen
 
-The built-in ST7789 shows the phase, temperatures, any alert, today's cycles, filter life and the board's address. The panel size is a first guess (`displayWidth`/`displayHeight` 240 x 240, `displayRotation`); adjust in Settings if the picture is offset or cut off.
+The built-in ST7789 shows the phase, temperatures, any alert, today's cycles, filter life and the board's address. The panel size is a first guess (`displayWidth`/`displayHeight` 240 x 240, `displayRotation`); adjust on the Settings Screen tab if the picture is offset or cut off.
 
 ## Layout
 

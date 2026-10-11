@@ -55,6 +55,19 @@
   form label { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: center; margin-bottom: 8px; font-size: 14px; }
   input, select { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); width: 100%; }
   fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 0 0 16px; padding: 12px; }
+  .subtabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+  .subtabs button { font: inherit; font-size: 14px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--muted); cursor: pointer; }
+  .subtabs button.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .spanel { display: none; } .spanel.active { display: block; }
+  form label .hint { display: block; color: var(--muted); font-size: 12px; }
+  .ctl { display: flex; gap: 6px; align-items: center; min-width: 0; }
+  .ctl input, .ctl select { flex: 1; min-width: 0; }
+  .ctl input[type=checkbox] { flex: none; width: auto; }
+  form label.off { opacity: 0.4; }
+  .ctl .changed { border-color: var(--bad); color: var(--bad); background: var(--bad-bg); }
+  .ctl input[type=checkbox].changed { outline: 2px solid var(--bad); outline-offset: 2px; }
+  .reset { font: inherit; font-size: 12px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--bad); background: none; color: var(--bad); cursor: pointer; white-space: nowrap; }
+  .savebar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   legend { color: var(--muted); font-size: 13px; padding: 0 4px; }
   .btn { font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--ink); background: var(--ink); color: var(--bg); cursor: pointer; }
   .note { color: var(--muted); font-size: 13px; }
@@ -180,15 +193,18 @@
   </section>
 
   <section id="settings">
-    <form id="settingsForm" class="card"></form>
-    <form id="updateForm" class="card">
-      <p><strong>Firmware update</strong></p>
-      <p class="note">Upload firmware.bin, or littlefs.bin with "Web files" ticked.</p>
-      <label>File <input type="file" name="file" required></label>
-      <label>Web files <input type="checkbox" name="fs" style="width:auto"></label>
-      <button class="btn">Upload</button>
-      <p class="note" id="updateMsg"></p>
-    </form>
+    <div class="subtabs" id="settingsTabs"></div>
+    <form id="settingsForm"></form>
+    <div class="spanel" data-panel="system">
+      <form id="updateForm" class="card">
+        <p><strong>Firmware update</strong></p>
+        <p class="note">Upload firmware.bin, or littlefs.bin with "Web files" ticked.</p>
+        <label>File <input type="file" name="file" required></label>
+        <label>Web files <input type="checkbox" name="fs" style="width:auto;justify-self:start"></label>
+        <button class="btn">Upload</button>
+        <p class="note" id="updateMsg"></p>
+      </form>
+    </div>
   </section>
 </main>
 
@@ -405,7 +421,6 @@ async function loadEvents() {
 }
 
 // Settings: built from the config JSON so new fields appear automatically.
-const SECRETS = ["wifiPass", "mqttPass", "webPass"];
 // POSIX TZ strings the ESP32 understands, with daylight saving rules.
 const TIME_ZONES = [
   ["US Eastern", "EST5EDT,M3.2.0,M11.1.0"],
@@ -431,29 +446,315 @@ const TIME_ZONES = [
 const attr = (s) => String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 const tzSelect = (v) => {
   const opts = TIME_ZONES.some(([, tz]) => tz === v) ? TIME_ZONES : [...TIME_ZONES, [`Custom (${v})`, v]];
-  return `<label>Time zone<select name="tz">${opts.map(([name, tz]) =>
-    `<option value="${attr(tz)}" ${tz === v ? "selected" : ""}>${attr(name)}</option>`).join("")}</select></label>`;
+  return `<select name="tz" data-def>${opts.map(([name, tz]) =>
+    `<option value="${attr(tz)}" ${tz === v ? "selected" : ""}>${attr(name)}</option>`).join("")}</select>`;
 };
+// Settings tabs. Each field: [key, label, hint, kind]. kind: "secret", "tz", "temp" (absolute °C),
+// "dtemp" (°C difference) or a unit shown after the label. Keys under model. are furnace model settings.
+const SETTINGS_TABS = [
+  { id: "general", name: "General", sections: [
+    { title: "Thermostat and gas valve", note: "Untick anything you haven't wired. Its settings on the other tabs are greyed out.", fields: [
+      ["diW1", "Heat call, stage 1 (W1)", "", "sensor"],
+      ["diW2", "Heat call, stage 2 (W2)", "", "sensor"],
+      ["diG", "Fan call (G)", "", "sensor"],
+      ["diMvl", "Gas valve, low fire (MVL)", "", "sensor"],
+      ["diMvh", "Gas valve, high fire (MVH)", "", "sensor"],
+      ["diCo", "CO alarm contact", "", "sensor"],
+    ] },
+    { title: "Current sensors and LED", fields: [
+      ["aiInducer", "Inducer current sensor", "", "sensor"],
+      ["aiBlower", "Blower current sensor", "", "sensor"],
+      ["aiLed", "Control board LED sensor", "Reads the board's flash codes", "sensor"],
+    ] },
+    { title: "Temperature probes", fields: [
+      ["rtdSupply", "Supply air", "", "sensor"],
+      ["rtdReturn", "Return air", "", "sensor"],
+      ["rtdFlue", "Flue pipe", "", "sensor"],
+      ["rtdSpare", "Spare", "", "sensor"],
+    ] },
+    { title: "Screen and SD card", fields: [
+      ["display", "Built-in screen"],
+      ["sdLogging", "SD card logging", "Minute readings, cycles and events"],
+    ] },
+  ] },
+  { id: "network", name: "Network", sections: [
+    { fields: [
+      ["hostname", "Device name", "The page answers at http://name.local/"],
+      ["tz", "Time zone", "Used for daily counts, SD log files and the screen", "tz"],
+      ["ntpServer", "Time server"],
+      ["wifiSsid", "Wi-Fi network", "Backup for when Ethernet has no link. Leave blank for Ethernet only"],
+      ["wifiPass", "Wi-Fi password", "Leave blank to keep the saved one", "secret"],
+    ] },
+  ] },
+  { id: "mqtt", name: "Home Assistant", sections: [
+    { fields: [
+      ["mqttHost", "MQTT broker", "Your Home Assistant MQTT broker. Leave blank to turn MQTT off"],
+      ["mqttPort", "Port"],
+      ["mqttUser", "Username"],
+      ["mqttPass", "Password", "Leave blank to keep the saved one", "secret"],
+      ["baseTopic", "Topic prefix", "State and events are published under this"],
+      ["discoveryPrefix", "Discovery prefix", "Leave as homeassistant unless you changed it in Home Assistant"],
+    ] },
+  ] },
+  { id: "wiring", name: "Wiring", sections: [
+    { title: "Digital inputs", note: "CO16 digital input number, 1 to 16. Turn inputs on or off on the General tab.", fields: [
+      ["diW1", "Heat call, stage 1 (W1)"],
+      ["diW2", "Heat call, stage 2 (W2)"],
+      ["diG", "Fan call (G)"],
+      ["diMvl", "Gas valve, low fire (MVL)"],
+      ["diMvh", "Gas valve, high fire (MVH)"],
+      ["diCo", "CO alarm contact"],
+      ["coOnOpen", "CO alarm opens the contact", "Tick for a normally closed alarm relay"],
+    ] },
+    { title: "Analog inputs", note: "CO16 analog input number, 1 to 16. Turn inputs on or off on the General tab.", fields: [
+      ["aiInducer", "Inducer current sensor"],
+      ["aiBlower", "Blower current sensor"],
+      ["aiLed", "Control board LED sensor"],
+    ] },
+    { title: "Temperature probes", note: "PT100 channel, 1 to 4. Turn probes on or off on the General tab.", fields: [
+      ["rtdSupply", "Supply air"],
+      ["rtdReturn", "Return air"],
+      ["rtdFlue", "Flue pipe"],
+      ["rtdSpare", "Spare"],
+    ] },
+  ] },
+  { id: "calibration", name: "Calibration", sections: [
+    { title: "Current sensors", note: "Amps per volt is the sensor's full-scale amps divided by 10 for a 0-10 V output.", fields: [
+      ["inducerAmpsPerVolt", "Inducer sensor", "A 0-5 A sensor is 0.5", "A/V"],
+      ["blowerAmpsPerVolt", "Blower sensor", "A 0-20 A sensor is 2", "A/V"],
+    ] },
+    { title: "LED sensor", fields: [
+      ["ledOnVolts", "LED counts as lit above", "Raise it if room light trips the sensor", "V"],
+    ] },
+    { title: "Probe offsets", note: "Added to each reading. Use these if a probe reads high or low against a thermometer you trust.", fields: [
+      ["offsetSupply", "Supply air", "", "dtemp"],
+      ["offsetReturn", "Return air", "", "dtemp"],
+      ["offsetFlue", "Flue pipe", "", "dtemp"],
+      ["offsetSpare", "Spare", "", "dtemp"],
+    ] },
+  ] },
+  { id: "alerts", name: "Alerts", sections: [
+    { title: "Control board", note: "Picking a board fills in its timings below and makes them the defaults those fields reset to.", fields: [
+      ["boardPreset", "Board", "", "preset"],
+    ] },
+    { title: "Motors", note: "Current that counts as running.", fields: [
+      ["model.inducerOnAmps", "Inducer running above", "", "A"],
+      ["model.inducerHighAmps", "Inducer on high speed above", "", "A"],
+      ["model.blowerOnAmps", "Blower running above", "", "A"],
+    ] },
+    { title: "Ignition and cycles", fields: [
+      ["model.flameConfirmS", "Flame proven once the valve has been open", "", "s"],
+      ["model.ignitionTimeoutS", "Ignition failure after", "Heat call with no gas valve for this long", "s"],
+      ["model.ignitionTrials", "Failed tries before an ignition alert", "Valve opened but flame never proved"],
+      ["model.shortCycleS", "Short cycle when the burner runs less than", "", "s"],
+      ["model.blowerDelayS", "Blower must start within", "Counted from flame. The board starts it at 45 s", "s"],
+    ] },
+    { title: "Temperatures", fields: [
+      ["model.settleS", "Warm-up before temperature checks", "", "s"],
+      ["model.riseSettleS", "Time on a stage before its rise is measured", "", "s"],
+      ["model.minDeltaTC", "Low temperature rise below", "Supply minus return", "dtemp"],
+      ["model.maxSupplyC", "Supply air too hot above", "", "temp"],
+      ["model.minFlueRiseC", "Flue should warm up by at least", "", "dtemp"],
+    ] },
+    { title: "Air filter", fields: [
+      ["filterLifeHours", "Change the filter every", "Counted in blower running hours", "h"],
+    ] },
+  ] },
+  { id: "display", name: "Screen", sections: [
+    { fields: [
+      ["displayFahrenheit", "Screen shows °F"],
+      ["displayWidth", "Screen width", "", "px"],
+      ["displayHeight", "Screen height", "", "px"],
+      ["displayRotation", "Screen rotation", "0 to 3, in quarter turns"],
+    ] },
+  ] },
+  { id: "system", name: "Login and firmware", sections: [
+    { fields: [
+      ["webUser", "Login name", "Needed to change settings and update firmware"],
+      ["webPass", "Login password", "Leave blank to keep the saved one", "secret"],
+    ] },
+  ] },
+];
+// Control board presets: the timing settings each board's sequence calls for. Values are in the
+// firmware's own units (seconds, counts).
+const BOARD_PRESETS = [
+  { id: "generic", name: "Generic (firmware defaults)", values: {
+    "model.flameConfirmS": 5, "model.ignitionTimeoutS": 90, "model.ignitionTrials": 2,
+    "model.blowerDelayS": 90, "model.shortCycleS": 180 } },
+  // Pre-purge, then 11 to 21 s of ignitor warm-up before the valve opens; 3 tries before lockout;
+  // blower on 45 s after flame.
+  { id: "wr50a51", name: "White-Rodgers 50A51-495", values: {
+    "model.flameConfirmS": 5, "model.ignitionTimeoutS": 60, "model.ignitionTrials": 2,
+    "model.blowerDelayS": 75, "model.shortCycleS": 180 } },
+];
+let settingsDefaults = {};
+// What each sensor switch on the General tab greys out elsewhere. A field is greyed while any
+// sensor it depends on is off. Input-number sensors are switched off by saving their input as 0,
+// which the firmware treats as not fitted; "restore" is the input to use when one with no
+// default is switched back on.
+const SENSOR_FIELDS = {
+  diW1: { fields: ["model.ignitionTimeoutS"] },
+  diW2: {},
+  diG: {},
+  diMvl: { fields: ["model.flameConfirmS", "model.ignitionTimeoutS", "model.ignitionTrials", "model.shortCycleS", "model.blowerDelayS"] },
+  diMvh: {},
+  diCo: { restore: 3, fields: ["coOnOpen"] },
+  aiInducer: { fields: ["inducerAmpsPerVolt", "model.inducerOnAmps", "model.inducerHighAmps"] },
+  aiBlower: { fields: ["blowerAmpsPerVolt", "model.blowerOnAmps", "model.blowerDelayS"] },
+  aiLed: { fields: ["ledOnVolts"] },
+  rtdSupply: { fields: ["offsetSupply", "model.maxSupplyC", "model.minDeltaTC", "model.riseSettleS"] },
+  rtdReturn: { fields: ["offsetReturn", "model.minDeltaTC", "model.riseSettleS"] },
+  rtdFlue: { fields: ["offsetFlue", "model.minFlueRiseC"] },
+  rtdSpare: { restore: 4, fields: ["offsetSpare"] },
+  display: { bool: true, fields: ["displayFahrenheit", "displayWidth", "displayHeight", "displayRotation"] },
+  sdLogging: { bool: true },
+};
+const formField = (k) => document.querySelector(`#settingsForm [name="${k}"]`);
+function applySensors() {
+  const off = new Set();
+  for (const [k, dep] of Object.entries(SENSOR_FIELDS)) {
+    const on = dep.bool ? formField(k)?.checked : document.querySelector(`[data-sensor="${k}"]`)?.checked;
+    if (on !== false) continue;
+    if (!dep.bool) off.add(k);
+    for (const f of dep.fields || []) off.add(f);
+  }
+  document.querySelectorAll("#settingsForm [data-def]").forEach((el) => {
+    el.disabled = off.has(el.name);
+    el.closest("label").classList.toggle("off", el.disabled);
+  });
+  markAll();
+  // A sensor switch is red when it differs from whether the sensor is fitted by default.
+  document.querySelectorAll("#settingsForm [data-sensor]").forEach((box) => {
+    const changed = box.checked !== !!Number(defaultFor(box.dataset.sensor));
+    box.classList.toggle("changed", changed);
+    box.parentElement.querySelector(".reset").hidden = !changed;
+  });
+}
+function toggleSensor(box) {
+  const k = box.dataset.sensor, el = formField(k);
+  if (!el) return;
+  if (!box.checked) {
+    if (Number(el.value)) el.dataset.prev = el.value;
+    el.value = 0;
+  } else if (!Number(el.value)) {
+    el.value = el.dataset.prev || defaultFor(k) || SENSOR_FIELDS[k].restore || 1;
+  }
+  applySensors();
+}
+const presetById = (id) => BOARD_PRESETS.find((b) => b.id === id) || BOARD_PRESETS[0];
+const presetSelect = (label, v) => `<label><span>${label}</span><select name="boardPreset">${
+  BOARD_PRESETS.map((b) => `<option value="${b.id}" ${b.id === v ? "selected" : ""}>${attr(b.name)}</option>`).join("")}</select></label>`;
+// The default for a field: the chosen board's value for its timings, otherwise the firmware's factory value.
+function defaultFor(k) {
+  const board = presetById(document.querySelector('select[name="boardPreset"]')?.value).values;
+  if (k in board) return board[k];
+  return k.startsWith("model.") ? settingsDefaults.model?.[k.slice(6)] : settingsDefaults[k];
+}
+const fieldValue = (el) => el.dataset.bool ? el.checked
+  : el.dataset.num === "true" ? fromShown(el.dataset.kind, Number(el.value)) : el.value;
+function setFieldValue(el, v) {
+  if (el.dataset.bool) el.checked = !!v;
+  else el.value = el.dataset.num === "true" ? toShown(el.dataset.kind, v) : v;
+}
+// Red when a field differs from its default, with a Reset button beside it.
+function markField(el) {
+  const btn = el.parentElement.querySelector(".reset");
+  if (!btn) return;
+  if (el.disabled) { el.classList.remove("changed"); btn.hidden = true; return; }
+  const def = defaultFor(el.name), cur = fieldValue(el);
+  const tol = el.dataset.kind === "temp" || el.dataset.kind === "dtemp" ? 0.06 : 1e-9;
+  const changed = def !== undefined && (typeof def === "number" ? !(Math.abs(cur - def) <= tol) : cur !== def);
+  el.classList.toggle("changed", changed);
+  btn.hidden = !changed;
+}
+const markAll = () => document.querySelectorAll("#settingsForm [data-def]").forEach(markField);
+function applyPreset(id) {
+  for (const [k, v] of Object.entries(presetById(id).values)) {
+    const el = document.querySelector(`#settingsForm [name="${k}"]`);
+    if (el) setFieldValue(el, v);
+  }
+  markAll();
+}
+const tUnitS = useF ? "°F" : "°C";
+const toShown = (kind, v) => !useF ? v : kind === "temp" ? Math.round((v * 9 / 5 + 32) * 10) / 10 : kind === "dtemp" ? Math.round(v * 9 / 5 * 10) / 10 : v;
+const fromShown = (kind, v) => !useF ? v : kind === "temp" ? (v - 32) * 5 / 9 : kind === "dtemp" ? v * 5 / 9 : v;
+let settingsTab = "general";
+function showSettingsTab(id) {
+  settingsTab = id;
+  document.querySelectorAll("#settingsTabs button").forEach((b) => b.classList.toggle("active", b.dataset.st === id));
+  document.querySelectorAll("#settings .spanel").forEach((p) => p.classList.toggle("active", p.dataset.panel === id));
+}
 async function loadSettings() {
-  const r = await fetch("/api/config");
-  if (!r.ok) { $("settingsForm").innerHTML = "<p>Sign in to change settings: open <a href='/api/config'>this link</a>, enter the web login, then come back and reopen Settings.</p>"; return; }
+  const [r, d] = await Promise.all([fetch("/api/config"), fetch("/api/defaults").catch(() => null)]);
+  if (!r.ok) {
+    $("settingsTabs").innerHTML = "";
+    $("settingsForm").innerHTML = "<p class='card'>Sign in to change settings: open <a href='/api/config'>this link</a>, enter the web login, then come back and reopen Settings.</p>";
+    return;
+  }
   const cfg = await r.json();
-  const field = (k, v, path) => typeof v === "boolean"
-    ? `<label>${k}<input type="checkbox" name="${path}" ${v ? "checked" : ""} data-bool="true" style="width:auto"></label>`
-    : `<label>${k}<input name="${path}" value="${v ?? ""}" ${typeof v === "number" ? 'inputmode="decimal"' : ""} data-num="${typeof v === "number"}"></label>`;
-  let html = "<fieldset><legend>Settings</legend>";
-  for (const [k, v] of Object.entries(cfg)) if (k !== "model") html += k === "tz" ? tzSelect(v) : field(k, v, k);
-  for (const k of SECRETS) html += `<label>${k}<input type="password" name="${k}" placeholder="unchanged"></label>`;
-  html += "</fieldset><fieldset><legend>Furnace model</legend>";
-  for (const [k, v] of Object.entries(cfg.model)) html += field(k, v, `model.${k}`);
-  html += '</fieldset><button class="btn">Save and restart</button>';
-  $("settingsForm").innerHTML = html;
+  settingsDefaults = d && d.ok ? await d.json() : {};
+  const get = (k) => k.startsWith("model.") ? cfg.model?.[k.slice(6)] : cfg[k];
+  const placed = new Set();
+  const withReset = (k, input) =>
+    `<span class="ctl">${input}<button type="button" class="reset" data-reset="${k}" hidden>Reset</button></span>`;
+  const field = ([k, label, hint = "", kind = ""]) => {
+    placed.add(k);
+    if (kind === "preset") return presetSelect(attr(label), presetById(cfg.boardPreset).id);
+    if (kind === "sensor") return get(k) === undefined ? "" :
+      `<label><span>${attr(label)}${hint ? `<span class="hint">${attr(hint)}</span>` : ""}</span><span class="ctl"><input type="checkbox" data-sensor="${k}" ${get(k) ? "checked" : ""}><button type="button" class="reset" data-sreset="${k}" hidden>Reset</button></span></label>`;
+    const v = get(k);
+    if (kind !== "secret" && v === undefined) return "";
+    const unit = kind === "temp" || kind === "dtemp" ? tUnitS : kind === "tz" || kind === "secret" ? "" : kind;
+    const name = `${attr(label)}${unit ? ` (${unit})` : ""}${hint ? `<span class="hint">${attr(hint)}</span>` : ""}`;
+    if (kind === "secret") return `<label><span>${name}</span><input type="password" name="${k}" placeholder="unchanged" autocomplete="new-password"></label>`;
+    let input;
+    if (kind === "tz") input = tzSelect(v);
+    else if (typeof v === "boolean") input = `<input type="checkbox" name="${k}" ${v ? "checked" : ""} data-bool="true" data-def>`;
+    else {
+      const num = typeof v === "number";
+      input = `<input name="${k}" value="${attr(num ? toShown(kind, v) : v ?? "")}" ${num ? 'inputmode="decimal"' : ""} data-num="${num}" data-kind="${kind}" data-def>`;
+    }
+    return `<label><span>${name}</span>${withReset(k, input)}</label>`;
+  };
+  const section = (sec) => `<fieldset>${sec.title ? `<legend>${attr(sec.title)}</legend>` : ""}${sec.note ? `<p class="note" style="margin-top:0">${attr(sec.note)}</p>` : ""}${sec.fields.map(field).join("")}</fieldset>`;
+  const tabs = SETTINGS_TABS.map((t) => ({ ...t, html: t.sections.map(section).join("") }));
+  // Anything the firmware sends that isn't listed above still shows up, so new settings are never hidden.
+  const extra = [...Object.keys(cfg).filter((k) => k !== "model"), ...Object.keys(cfg.model || {}).map((k) => `model.${k}`)]
+    .filter((k) => !placed.has(k)).map((k) => [k, k]);
+  if (extra.length) tabs.push({ id: "other", name: "Other", html: section({ fields: extra }) });
+  $("settingsTabs").innerHTML = tabs.map((t) => `<button type="button" data-st="${t.id}">${attr(t.name)}</button>`).join("");
+  $("settingsForm").innerHTML = tabs.map((t) => `<div class="spanel" data-panel="${t.id}"><div class="card">${t.html}</div></div>`).join("") +
+    '<div class="card savebar"><button class="btn">Save and restart</button><span class="note">Saves every tab. The board restarts to apply changes. Red fields differ from their defaults.</span></div>';
+  document.querySelectorAll("#settingsTabs button").forEach((b) => b.onclick = () => showSettingsTab(b.dataset.st));
+  document.querySelector('select[name="boardPreset"]').onchange = (e) => applyPreset(e.target.value);
+  document.querySelectorAll("#settingsForm [data-def]").forEach((el) => el.addEventListener(el.tagName === "SELECT" || el.dataset.bool ? "change" : "input", () => markField(el)));
+  document.querySelectorAll("#settingsForm .reset").forEach((b) => b.onclick = () => {
+    const el = document.querySelector(`#settingsForm [name="${b.dataset.reset}"]`);
+    setFieldValue(el, defaultFor(el.name));
+    markField(el);
+  });
+  document.querySelectorAll("#settingsForm [data-sensor]").forEach((b) => b.onchange = () => toggleSensor(b));
+  document.querySelectorAll("#settingsForm [data-sreset]").forEach((b) => b.onclick = () => {
+    const box = document.querySelector(`[data-sensor="${b.dataset.sreset}"]`);
+    box.checked = !!Number(defaultFor(box.dataset.sensor));
+    toggleSensor(box);
+  });
+  // Typing 0 for an input on the Wiring tab switches it off on the General tab too.
+  for (const k of Object.keys(SENSOR_FIELDS)) {
+    const el = formField(k), box = document.querySelector(`[data-sensor="${k}"]`);
+    if (!el) continue;
+    if (box) el.addEventListener("input", () => { box.checked = !!Number(el.value); applySensors(); });
+    else el.addEventListener("change", applySensors);
+  }
+  applySensors();
+  showSettingsTab(tabs.some((t) => t.id === settingsTab) ? settingsTab : "general");
 }
 $("settingsForm").onsubmit = async (e) => {
   e.preventDefault();
   const out = { model: {} };
   for (const el of e.target.querySelectorAll("input, select")) {
-    const v = el.dataset.bool ? el.checked : el.dataset.num === "true" ? Number(el.value) : el.value;
+    if (!el.name || (el.type === "password" && !el.value)) continue;
+    const v = fieldValue(el);
     if (el.name.startsWith("model.")) out.model[el.name.slice(6)] = v; else out[el.name] = v;
   }
   const r = await fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(out) });
