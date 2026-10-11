@@ -21,7 +21,10 @@ static const char* kPath = "/config.json";
   X(boardPreset) X(aiCo) X(coPpmPerVolt) X(coAlertPpm) X(aiRoom) \
   X(roomLowC) X(roomHighC) X(spareName) X(tempUnit)        \
   X(aiOutdoor) X(outdoorLowC) X(outdoorHighC) X(weatherOn) \
-  X(weatherLat) X(weatherLon)
+  X(weatherLat) X(weatherLon) X(dashLayout) X(dashChart)      \
+  X(aiPress1) X(aiPress2) X(aiPress3) X(press1Name) X(press2Name) X(press3Name) \
+  X(press1LowPa) X(press1HighPa) X(press2LowPa) X(press2HighPa)    \
+  X(press3LowPa) X(press3HighPa) X(pressUnit)
 
 #define SECRET_FIELDS(X) X(wifiPass) X(mqttPass) X(webPass)
 

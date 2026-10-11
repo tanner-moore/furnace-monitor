@@ -124,6 +124,15 @@ static void publishDiscovery() {
   if (config.aiRoom) sensor(cmps, "t_room", "Room temperature", "°C", "temperature", "measurement");
   if (config.aiOutdoor || config.weatherOn)
     sensor(cmps, "t_out", "Outdoor temperature", "°C", "temperature", "measurement");
+  // Pressures in pascals; Home Assistant can show them in inH2O.
+  static String pressTitle[3];
+  const uint8_t pressAi[3] = {config.aiPress1, config.aiPress2, config.aiPress3};
+  const String* pressName[3] = {&config.press1Name, &config.press2Name, &config.press3Name};
+  for (int i = 0; i < 3; i++) {
+    if (!pressAi[i]) continue;
+    pressTitle[i] = *pressName[i];
+    sensor(cmps, i == 0 ? "p1" : i == 1 ? "p2" : "p3", pressTitle[i].c_str(), "Pa", "pressure", "measurement");
+  }
   if (config.rtdSpare) {
     static String spareTitle;
     spareTitle = config.spareName + " temperature";

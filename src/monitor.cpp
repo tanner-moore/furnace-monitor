@@ -30,6 +30,9 @@ static constexpr uint32_t kBenchHoldMs = 15000;
 struct Sample {
   uint32_t epoch;
   int16_t supply10, return10, flue10;  // 0.1 C, INT16_MIN = no reading
+  int16_t room10, outdoor10, spare10;  // 0.1 C, INT16_MIN = not fitted or no reading
+  int16_t co10;                        // 0.1 ppm, INT16_MIN = not fitted or no reading
+  int16_t press10[3];                  // 0.1 Pa, INT16_MIN = not fitted or no reading
   uint8_t inducerA10, blowerA10;       // 0.1 A, 255 = no reading
   uint8_t flags;                       // see kFlag*
   uint8_t phase;
@@ -154,8 +157,8 @@ static void saveTotals() {
 struct MinuteAcc {
   uint32_t minute = 0;  // epoch / 60
   int n = 0;
-  float sum[5];
-  int cnt[5];
+  float sum[12];
+  int cnt[12];
   uint8_t flags = 0, phase = 0;
 
   void add(float v, int i) {
@@ -168,7 +171,7 @@ struct MinuteAcc {
     minute = m;
     n = 0;
     flags = 0;
-    for (int i = 0; i < 5; i++) sum[i] = 0, cnt[i] = 0;
+    for (int i = 0; i < 12; i++) sum[i] = 0, cnt[i] = 0;
   }
 };
 
@@ -180,6 +183,11 @@ static Sample toSample(const sdlog::MinuteRow& r) {
   s.flue10 = pack10(r.flueC);
   s.inducerA10 = packAmps(r.inducerAmps);
   s.blowerA10 = packAmps(r.blowerAmps);
+  s.room10 = pack10(r.roomC);
+  s.outdoor10 = pack10(r.outdoorC);
+  s.spare10 = pack10(r.spareC);
+  s.co10 = pack10(r.coPpm);
+  for (int i = 0; i < 3; i++) s.press10[i] = pack10(r.pressPa[i]);
   s.flags = r.flags;
   s.phase = r.phase;
   return s;
@@ -194,6 +202,7 @@ static bool rtdUsed(uint8_t ch) {
 static void task(void*) {
   furnace::Inputs in;
   float spare = NAN, ledV = NAN, roomC = NAN, outdoorC = NAN, coPpm = NAN;
+  float pressPa[3] = {NAN, NAN, NAN};
   uint16_t raw = 0;
   bool inputsOk = false;
   uint8_t rtdStep = 0, benchAi = 0;
@@ -243,6 +252,11 @@ static void task(void*) {
       outdoorC = config.aiOutdoor ? config.outdoorLowC + co16::readAnalogVolts(config.aiOutdoor) / 10.0f *
                                                              (config.outdoorHighC - config.outdoorLowC)
                                   : NAN;
+      const uint8_t pressAi[3] = {config.aiPress1, config.aiPress2, config.aiPress3};
+      const float pressLo[3] = {config.press1LowPa, config.press2LowPa, config.press3LowPa};
+      const float pressHi[3] = {config.press1HighPa, config.press2HighPa, config.press3HighPa};
+      for (int i = 0; i < 3; i++)
+        pressPa[i] = pressAi[i] ? pressLo[i] + co16::readAnalogVolts(pressAi[i]) / 10.0f * (pressHi[i] - pressLo[i]) : NAN;
     }
 
     // Bench mode: one more analog input per pass, all 16 in under a second.
@@ -278,7 +292,9 @@ static void task(void*) {
     in.sensorFault = !inputsOk || (config.rtdSupply && isnan(in.supplyC)) || (config.rtdReturn && isnan(in.returnC)) ||
                      (config.rtdFlue && isnan(in.flueC)) || (config.aiInducer && isnan(in.inducerAmps)) ||
                      (config.aiBlower && isnan(in.blowerAmps)) || (config.aiCo && isnan(coPpm)) ||
-                     (config.aiRoom && isnan(roomC)) || (config.aiOutdoor && isnan(outdoorC));
+                     (config.aiRoom && isnan(roomC)) || (config.aiOutdoor && isnan(outdoorC)) ||
+                     (config.aiPress1 && isnan(pressPa[0])) || (config.aiPress2 && isnan(pressPa[1])) ||
+                     (config.aiPress3 && isnan(pressPa[2]));
 
     const time_t epoch = nowEpoch();
     xSemaphoreTake(lock, portMAX_DELAY);
@@ -340,6 +356,7 @@ static void task(void*) {
     snap.spareC = spare;
     snap.roomC = roomC;
     snap.outdoorC = outdoorC;
+    for (int i = 0; i < 3; i++) snap.pressPa[i] = pressPa[i];
     snap.coPpm = coPpm;
     snap.ledVolts = ledV;
     snap.rawInputs = raw;
@@ -364,6 +381,13 @@ static void task(void*) {
       s.flue10 = pack10(in.flueC);
       s.inducerA10 = packAmps(in.inducerAmps);
       s.blowerA10 = packAmps(in.blowerAmps);
+      // Outdoor as shown on the dashboard: the sensor, or Open-Meteo when there is none.
+      const float outC = !isnan(outdoorC) ? outdoorC : weather::tempC();
+      s.room10 = pack10(roomC);
+      s.outdoor10 = pack10(outC);
+      s.spare10 = pack10(spare);
+      s.co10 = pack10(coPpm);
+      for (int i = 0; i < 3; i++) s.press10[i] = pack10(pressPa[i]);
       s.flags = (in.w1 ? kFlagW1 : 0) | (in.w2 ? kFlagW2 : 0) | (in.g ? kFlagG : 0) | (in.mvl ? kFlagMvl : 0) |
                 (in.mvh ? kFlagMvh : 0) | (st.flame ? kFlagFlame : 0) | (st.blowerOn ? kFlagBlower : 0);
       s.phase = (uint8_t)st.phase;
@@ -381,6 +405,11 @@ static void task(void*) {
             r.flueC = acc.avg(2);
             r.inducerAmps = acc.avg(3);
             r.blowerAmps = acc.avg(4);
+            r.roomC = acc.avg(5);
+            r.outdoorC = acc.avg(6);
+            r.spareC = acc.avg(7);
+            r.coPpm = acc.avg(8);
+            for (int i = 0; i < 3; i++) r.pressPa[i] = acc.avg(9 + i);
             r.flags = acc.flags;
             r.phase = acc.phase;
             coarse.push(toSample(r));
@@ -394,6 +423,11 @@ static void task(void*) {
         acc.add(in.flueC, 2);
         acc.add(in.inducerAmps, 3);
         acc.add(in.blowerAmps, 4);
+        acc.add(roomC, 5);
+        acc.add(outC, 6);
+        acc.add(spare, 7);
+        acc.add(coPpm, 8);
+        for (int i = 0; i < 3; i++) acc.add(pressPa[i], 9 + i);
         acc.flags |= s.flags;
         acc.phase = s.phase;
       }
@@ -517,6 +551,16 @@ void stateJson(const Snapshot& s, JsonObject o) {
   o["spare_fitted"] = config.rtdSpare != 0;
   o["room_fitted"] = config.aiRoom != 0;
   o["out_fitted"] = config.aiOutdoor != 0 || config.weatherOn;
+  // Pressures in pascals; the page converts to the chosen unit.
+  const uint8_t pressAi[3] = {config.aiPress1, config.aiPress2, config.aiPress3};
+  const String* pressName[3] = {&config.press1Name, &config.press2Name, &config.press3Name};
+  for (int i = 0; i < 3; i++) {
+    const char* key[3][3] = {{"p1", "p1_fitted", "p1_name"}, {"p2", "p2_fitted", "p2_name"}, {"p3", "p3_fitted", "p3_name"}};
+    putNum(o, key[i][0], s.pressPa[i]);
+    o[key[i][1]] = pressAi[i] != 0;
+    o[key[i][2]] = *pressName[i];
+  }
+  o["press_unit"] = config.pressUnit == "Pa" ? "Pa" : "inwc";
   o["co_ppm_fitted"] = config.aiCo != 0;
   putNum(o, "i_inducer", s.in.inducerAmps, 2);
   putNum(o, "i_blower", s.in.blowerAmps, 2);
@@ -622,6 +666,16 @@ void historyJson(uint32_t hrs, size_t maxPoints, JsonObject o) {
   JsonArray t = o["t"].to<JsonArray>(), sup = o["supply"].to<JsonArray>(), ret = o["return"].to<JsonArray>(),
             flue = o["flue"].to<JsonArray>(), ind = o["inducer"].to<JsonArray>(), blo = o["blower"].to<JsonArray>(),
             flags = o["flags"].to<JsonArray>();
+  // The optional sensors only when fitted, to keep the reply small.
+  const bool hasOut = config.aiOutdoor || config.weatherOn;
+  JsonArray room = config.aiRoom ? o["room"].to<JsonArray>() : JsonArray(),
+            outdoor = hasOut ? o["outdoor"].to<JsonArray>() : JsonArray(),
+            spare = config.rtdSpare ? o["spare"].to<JsonArray>() : JsonArray(),
+            co = config.aiCo ? o["co"].to<JsonArray>() : JsonArray();
+  const bool hasPress[3] = {config.aiPress1 != 0, config.aiPress2 != 0, config.aiPress3 != 0};
+  JsonArray press[3];
+  for (int i = 0; i < 3; i++)
+    if (hasPress[i]) press[i] = o[i == 0 ? "p1" : i == 1 ? "p2" : "p3"].to<JsonArray>();
   for (size_t i = want; i >= step; i -= step) {
     // Over a step of several samples, keep any flag seen (so short burns show).
     uint8_t f = 0;
@@ -636,6 +690,12 @@ void historyJson(uint32_t hrs, size_t maxPoints, JsonObject o) {
     add10(flue, s.flue10);
     if (s.inducerA10 == 255) ind.add(nullptr); else ind.add(s.inducerA10 / 10.0f);
     if (s.blowerA10 == 255) blo.add(nullptr); else blo.add(s.blowerA10 / 10.0f);
+    if (config.aiRoom) add10(room, s.room10);
+    if (hasOut) add10(outdoor, s.outdoor10);
+    if (config.rtdSpare) add10(spare, s.spare10);
+    if (config.aiCo) add10(co, s.co10);
+    for (int k = 0; k < 3; k++)
+      if (hasPress[k]) add10(press[k], s.press10[k]);
     flags.add(f);
   }
   o["period_s"] = r.periodS * step;

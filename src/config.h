@@ -44,6 +44,15 @@ struct Config {
   uint8_t aiOutdoor = 0;            // outdoor temperature sensor (AI 6 suggested)
   float outdoorLowC = -40.0f, outdoorHighC = 60.0f;  // what the outdoor sensor reads at 0 V and at 10 V
 
+  // Up to three 0-10 V differential pressure transmitters (AI 7-9 suggested), in pascals.
+  // Names show on the dashboard and in Home Assistant; low/high are what each reads at 0 V and 10 V.
+  uint8_t aiPress1 = 0, aiPress2 = 0, aiPress3 = 0;
+  String press1Name = "Filter pressure drop", press2Name = "TESP", press3Name = "Pressure 3";
+  float press1LowPa = 0.0f, press1HighPa = 249.09f;     // 0 to 1 in. w.c.
+  float press2LowPa = 0.0f, press2HighPa = 498.18f;     // 0 to 2 in. w.c.
+  float press3LowPa = 0.0f, press3HighPa = 249.09f;     // 0 to 1 in. w.c.
+  String pressUnit = "inwc";  // shown on the web page as inches of water ("inwc") or pascals ("Pa")
+
   // Outdoor temperature from Open-Meteo, used when no outdoor sensor is wired or it fails.
   bool weatherOn = false;
   float weatherLat = 0.0f, weatherLon = 0.0f;  // decimal degrees; west and south are negative
@@ -60,6 +69,11 @@ struct Config {
   // Temperature units for the web page and the screen: "F" or "C". MQTT always sends °C and
   // Home Assistant converts to its own units.
   String tempUnit = "C";
+
+  // Live tab layout from "Customize dashboard": widget names in order, hidden ones prefixed
+  // with "-". Blank means the default layout.
+  String dashLayout;
+  String dashChart;  // chart widget: "hours|line,line"; blank means 6 h of supply, return, flue and burner
 
   // Air filter: blower hours between changes.
   uint16_t filterLifeHours = 500;

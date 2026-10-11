@@ -22,6 +22,7 @@ The full build plan (sensors, wiring, safety notes) is in the project's [build p
 | CO level (optional) | CO transmitter with a 0-10 V output, in ppm (default 25 ppm/V, alert at 35 ppm) | AI 4 (tick CO sensor on the General tab) |
 | Room temperature (optional) | Temperature transmitter with a 0-10 V output (default 0 to 50 °C) | AI 5 (tick Room temperature sensor on the General tab) |
 | Outdoor temperature (optional) | Temperature transmitter with a 0-10 V output, outdoor rated (default -40 to 60 °C) | AI 6 (tick Outdoor temperature sensor on the General tab) |
+| Pressures (optional, up to 3, renamable) | Differential pressure transmitters with a 0-10 V output, set up by default as filter pressure drop (0 to 1 in. w.c.) and total external static pressure, TESP (0 to 2 in. w.c.), plus a spare (0 to 1 in. w.c.) | AI 7, 8, 9 (tick Pressure sensor 1-3 on the General tab) |
 | Spare probe (optional, renamable) | PT100, 3-wire | PT100 4 |
 
 Untick any sensor that isn't fitted on the Settings General tab. That saves its input as 0, which the firmware treats as not fitted, and greys out its settings on the other tabs. The CO sensor adds CO level and alerts to Home Assistant; it does not replace the CO alarms the house already needs.
@@ -29,6 +30,8 @@ Untick any sensor that isn't fitted on the Settings General tab. That saves its 
 The CO16 has four PT100 channels, and supply, return and flue use three of them, so the room sensor goes on an analog input instead. Both transmitters need a 0-10 V output; if the CO16 has a range jumper for its analog inputs, set those inputs to 0-10 V.
 
 Outdoor temperature can also come from [Open-Meteo](https://open-meteo.com/), a free weather service that needs no account. Tick "Outdoor temperature from Open-Meteo" on the General tab and enter your latitude and longitude on the Network tab. The board fetches the current temperature every 15 minutes. When an outdoor sensor is also fitted, the sensor is used and Open-Meteo fills in if it fails. Both are off by default.
+
+Pressure sensors only read air pressure through tubes to static-pressure tips in the ductwork. For filter pressure drop, put one tip in the return just before the filter (high port) and one just after it (low port). For TESP, put one tip in the supply plenum just above the furnace, before any cooling coil (high port), and one in the return between the filter and the furnace (low port). Nothing connects to the furnace's own pressure-switch hoses. Gas pressure is deliberately not offered, because measuring it permanently means adding a fitting to the gas valve, and that is a job for a gas fitter, not a monitor.
 
 ## What it tracks
 
@@ -69,11 +72,15 @@ The board subscribes only to `homeassistant/status` (to resend discovery when Ho
 
 ## Web API
 
-`GET /api/state`, `GET /api/history?hours=24` (up to 720), `GET /api/cycles`, `GET /api/events`, `GET /api/bench`, `POST /api/filter/reset` (login), `GET`/`POST /api/config` (login), `POST /update` (login), WebSocket `/ws` (live state every second).
+`GET /api/state`, `GET`/`POST /api/layout` (saving needs login), `GET /api/history?hours=24` (up to 720), `GET /api/cycles`, `GET /api/events`, `GET /api/bench`, `POST /api/filter/reset` (login), `GET`/`POST /api/config` (login), `POST /update` (login), WebSocket `/ws` (live state every second).
 
 ## SD card and history
 
 With a card in the CO16's slot (FAT32), the board writes one-minute averages to `/log/YYYY-MM-DD.csv`, burner cycles to `/cycles.csv` and events to `/events.csv`. On start it reads the last 30 days back, so the History tab (24 h, 7 days, 30 days), the Cycles tab and the event log carry on across restarts. Without a card everything works, but history starts again at each restart.
+
+## Live tab layout
+
+Press "Customize dashboard" under the Live tab to hide tiles, show hidden ones (such as the 6-hour temperature chart), and reorder them by dragging or with the arrow buttons. While customizing, the chart widget also lets you pick its time span and which lines and shading it shows: any temperature, the rise, the motor currents, CO, the pressures, and when the burner, high fire, blower or heat call was on. The History tab has the same line choices, remembered in each browser. Saving needs the settings login. The layout is stored on the board, so every browser sees the same layout, and saving it doesn't restart the board. "Reset to default" goes back to the standard layout.
 
 ## Bench tab
 

@@ -2,9 +2,10 @@
 // tried without a CO16. Same endpoints as src/web.cpp; the data comes from
 // tools/sim/sim.cpp running the real furnace model. No npm packages needed.
 //
-//   node tools/sim/server.mjs [--port 8080] [--speed 1] [--seed 1]
+//   node tools/sim/server.mjs [--port 8080] [--speed 1] [--seed 1] [--all-sensors]
 //
 // --speed runs the simulated furnace faster than real time (up to 50x).
+// --all-sensors also fits the optional room, outdoor, spare and CO sensors, with made-up readings.
 
 import { spawn, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -23,6 +24,19 @@ const arg = (name, def) => {
 const port = Number(arg("port", 8080));
 const speed = Math.min(50, Math.max(1, Number(arg("speed", 1))));
 const seed = arg("seed", "1");
+const allSensors = process.argv.includes("--all-sensors");
+// Made-up readings for the optional sensors: a room near 21 °C, an outdoor day/night swing,
+// a basement probe and a trace of CO.
+// Made-up pressures: filter drop and TESP both follow the blower.
+const pressures = (s) => {
+  const wob = (k) => Math.sin(s.time / 97 + k) * 2;
+  return { p1: (s.blower ? 30 + s.i_blower * 3 : 0) + wob(1), p2: (s.blower ? 125 + s.i_blower * 8 : 0) + wob(2),
+           p3: (s.blower ? 60 + s.i_blower * 2 : 0) + wob(3) };
+};
+const extras = (t) => ({
+  room: 21 + 0.6 * Math.sin(t / 2700), outdoor: 6 + 5 * Math.sin(2 * Math.PI * (t / 86400 - 0.35)),
+  spare: 15.5 + 0.4 * Math.sin(t / 5000), co: Math.max(0, 1.5 + Math.sin(t / 1800)),
+});
 
 // Build the simulator when it is missing or older than its sources.
 const core = join(root, "lib", "furnace_core", "src");
@@ -59,12 +73,19 @@ function absorb(s) {
   }
   if (s.uptime_s % 5 === 0) {
     history.push({ t: s.time, supply: s.t_supply, return: s.t_return, flue: s.t_flue,
-                   inducer: s.i_inducer, blower: s.i_blower, flags: s.flags });
+                   inducer: s.i_inducer, blower: s.i_blower, flags: s.flags, ...extras(s.time), ...pressures(s) });
     if (history.length > HISTORY_S / 5) history.shift();
   }
   delete s.events;
   delete s.flags;
   state = { ...s, link: "eth", ip: "192.168.1.50", rssi: 0, mqtt: true };
+  if (allSensors) {
+    const x = extras(s.time);
+    Object.assign(state, { room_fitted: true, t_room: x.room, out_fitted: true, t_out: x.outdoor, out_src: "weather",
+                           spare_fitted: true, spare_name: "Basement", t_spare: x.spare, co_ppm_fitted: true, co_ppm: x.co,
+                           ...pressures(s), p1_fitted: true, p2_fitted: true, p3_fitted: true, p1_name: "Filter pressure drop",
+                           p2_name: "TESP", p3_name: "Pressure 3", press_unit: "inwc" });
+  }
 }
 
 async function step(n) {
@@ -97,17 +118,23 @@ const CONFIG = {
   aiInducer: 1, aiBlower: 2, aiLed: 3, inducerAmpsPerVolt: 0.5, blowerAmpsPerVolt: 2, ledOnVolts: 2,
   rtdSupply: 1, rtdReturn: 2, rtdFlue: 3, rtdSpare: 0, offsetSupply: 0, offsetReturn: 0, offsetFlue: 0, offsetSpare: 0,
   boardPreset: "generic", aiCo: 0, coPpmPerVolt: 25, coAlertPpm: 35, aiRoom: 0, roomLowC: 0, roomHighC: 50,
-  aiOutdoor: 0, outdoorLowC: -40, outdoorHighC: 60, weatherOn: false, weatherLat: 0, weatherLon: 0,
+  aiOutdoor: 0, outdoorLowC: -40, outdoorHighC: 60, weatherOn: false, weatherLat: 0, weatherLon: 0, dashLayout: "", dashChart: "",
+  aiPress1: 0, aiPress2: 0, aiPress3: 0, press1Name: "Filter pressure drop", press2Name: "TESP", press3Name: "Pressure 3",
+  press1LowPa: 0, press1HighPa: 249.09, press2LowPa: 0, press2HighPa: 498.18, press3LowPa: 0, press3HighPa: 249.09, pressUnit: "inwc",
   spareName: "Spare",
   model: { inducerOnAmps: 0.3, inducerHighAmps: 1.2, blowerOnAmps: 1, flameConfirmS: 5, ignitionTimeoutS: 90,
            shortCycleS: 180, blowerDelayS: 90, settleS: 300, minDeltaTC: 15, maxSupplyC: 85, minFlueRiseC: 10,
            ignitionTrials: 2, riseSettleS: 180 },
 };
 
+if (allSensors) Object.assign(CONFIG, { aiRoom: 5, aiOutdoor: 6, weatherOn: true, rtdSpare: 4, aiCo: 4, spareName: "Basement",
+                                 aiPress1: 7, aiPress2: 8, aiPress3: 9 });
+
 function historyJson(hours) {
   const want = Math.min(hours * 720, history.length);
   const step = Math.max(1, Math.ceil(want / 720));
   const out = { t: [], supply: [], return: [], flue: [], inducer: [], blower: [], flags: [] };
+  if (allSensors) Object.assign(out, { room: [], outdoor: [], spare: [], co: [], p1: [], p2: [], p3: [] });
   for (let i = history.length - want; i < history.length; i += step) {
     for (const k of Object.keys(out)) out[k].push(history[i][k]);
   }
@@ -128,6 +155,12 @@ const server = createServer((req, res) => {
   else if (url.pathname === "/api/config" && req.method === "GET") json(CONFIG);
   else if (url.pathname === "/api/defaults") json(CONFIG);
   else if (url.pathname === "/api/config") text(200, "simulator: settings not saved");
+  else if (url.pathname === "/api/layout" && req.method === "GET") json({ layout: CONFIG.dashLayout, chart: CONFIG.dashChart });
+  else if (url.pathname === "/api/layout") {
+    let body = "";
+    req.on("data", (d) => (body += d));
+    req.on("end", () => { const j = JSON.parse(body || "{}"); CONFIG.dashLayout = j.layout || ""; CONFIG.dashChart = j.chart || ""; text(200, "layout saved"); });
+  }
   else if (url.pathname === "/update") { req.resume(); req.on("end", () => text(200, "simulator: update ignored")); }
   else text(404, "not found");
 });

@@ -14,6 +14,8 @@ namespace sdlog {
 struct MinuteRow {
   uint32_t epoch = 0;
   float supplyC = NAN, returnC = NAN, flueC = NAN, inducerAmps = NAN, blowerAmps = NAN;
+  float roomC = NAN, outdoorC = NAN, spareC = NAN, coPpm = NAN;
+  float pressPa[3] = {NAN, NAN, NAN};
   uint8_t flags = 0;  // OR of the history flag bits seen during the minute
   uint8_t phase = 0;
 };
