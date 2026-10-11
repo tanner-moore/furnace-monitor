@@ -85,6 +85,10 @@ The board subscribes only to `homeassistant/status` (to resend discovery when Ho
 
 With a card in the CO16's slot (FAT32), the board writes one-minute averages to `/log/YYYY-MM-DD.csv`, burner cycles to `/cycles.csv` and events to `/events.csv`. On start it reads the last 30 days back, so the History tab (24 h, 7 days, 30 days), the Cycles tab and the event log carry on across restarts. Without a card everything works, but history starts again at each restart.
 
+## Home page
+
+The page opens on Home, which shows only what's worth a glance: what the furnace is doing, any problem, inside, outside and supply air temperatures (supply and return when there are no room or outdoor readings), the air filter's state, carbon monoxide when that sensor is fitted, and today's cycles and burner time. "All readings" opens the Live tab with everything else.
+
 ## Live tab layout
 
 Press "Customize dashboard" under the Live tab to hide tiles, show hidden ones (such as the 6-hour temperature chart), and reorder them by dragging or with the arrow buttons. While customizing, the chart widget also lets you pick its time span and which lines and shading it shows: any temperature, the rise, the motor currents, CO, the pressures, and when the burner, high fire, blower or heat call was on. The History tab has the same line choices, remembered in each browser. Saving needs the settings login. The layout is stored on the board, so every browser sees the same layout, and saving it doesn't restart the board. "Reset to default" goes back to the standard layout.

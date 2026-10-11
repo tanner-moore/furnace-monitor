@@ -7,14 +7,14 @@
 <style>
   :root {
     --bg: #f6f6f4; --card: #fff; --ink: #1d1d1b; --muted: #6b6b66; --line: #e2e2dc;
-    --on: #c2410c; --on-bg: #fff1e8; --ok: #15803d; --bad: #b91c1c; --bad-bg: #fdecec;
+    --on: #c2410c; --on-bg: #fff1e8; --ok: #15803d; --ok-bg: #e9f6ee; --bad: #b91c1c; --bad-bg: #fdecec;
     --supply: #c2410c; --return: #2563eb; --flue: #7c3aed;
     --rise: #b45309; --room: #0d9488; --outdoor: #16a34a; --spare: #db2777; --inducer: #64748b; --blowerc: #0891b2; --co: #dc2626; --p1: #9333ea; --p2: #0284c7; --p3: #65a30d;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #161615; --card: #1f1f1d; --ink: #ecece8; --muted: #9a9a93; --line: #33332f;
-      --on: #fb923c; --on-bg: #3a2414; --ok: #4ade80; --bad: #f87171; --bad-bg: #3b1717;
+      --on: #fb923c; --on-bg: #3a2414; --ok: #4ade80; --ok-bg: #15291c; --bad: #f87171; --bad-bg: #3b1717;
       --supply: #fb923c; --return: #60a5fa; --flue: #a78bfa;
       --rise: #fbbf24; --room: #2dd4bf; --outdoor: #4ade80; --spare: #f472b6; --inducer: #94a3b8; --blowerc: #22d3ee; --co: #f87171; --p1: #c084fc; --p2: #38bdf8; --p3: #a3e635;
     }
@@ -111,6 +111,30 @@
   #dashBar { justify-content: flex-end; margin-bottom: 16px; }
   @media (max-width: 640px) { .dash { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 640px) { .di { grid-template-columns: repeat(4, 1fr); } }
+  /* Home: the few things worth a glance. */
+  #home { max-width: 560px; margin: 0 auto; }
+  .hero { display: flex; align-items: center; gap: 16px; padding: 20px; }
+  .hero .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 5px var(--ok-bg); flex: none; }
+  .hero .dot.on { background: var(--on); box-shadow: 0 0 0 5px var(--on-bg); }
+  .hero .dot.bad { background: var(--bad); box-shadow: 0 0 0 5px var(--bad-bg); }
+  .hero.bad { border-color: var(--bad); }
+  #hPhase { font-size: 22px; font-weight: 600; }
+  #hSub { color: var(--muted); font-size: 14px; }
+  .hero.bad #hSub { color: var(--bad); }
+  .temps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+  .temps .card { margin: 0; text-align: center; padding: 16px 8px; }
+  .temps .label { color: var(--muted); font-size: 13px; }
+  .temps .big { font-size: clamp(26px, 8vw, 38px); font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; }
+  .temps .big small { font-size: 0.45em; color: var(--muted); font-weight: 400; margin-left: 2px; }
+  .hlist { padding: 4px 16px; }
+  .hlist > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .hlist > div:last-child { border-bottom: 0; }
+  .hlist .what { font-weight: 500; }
+  .hlist .detail { color: var(--muted); font-size: 13px; }
+  .pill { padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; white-space: nowrap; background: var(--ok-bg); color: var(--ok); }
+  .pill.bad { background: var(--bad-bg); color: var(--bad); }
+  .pill.wait { background: var(--bg); color: var(--muted); }
+  .more { display: block; margin: 0 auto 16px; }
 </style>
 </head>
 <body>
@@ -119,7 +143,8 @@
   <span class="meta" id="meta">connecting…</span>
 </header>
 <nav>
-  <button data-tab="live" class="active">Live</button>
+  <button data-tab="home" class="active">Home</button>
+  <button data-tab="live">Live</button>
   <button data-tab="history">History</button>
   <button data-tab="cycles">Cycles</button>
   <button data-tab="events">Events</button>
@@ -127,7 +152,21 @@
   <button data-tab="settings">Settings</button>
 </nav>
 <main>
-  <section id="live" class="active">
+  <section id="home" class="active">
+    <div class="card hero" id="hero">
+      <span class="dot" id="hDot"></span>
+      <div><div id="hPhase">Connecting…</div><div id="hSub"></div></div>
+    </div>
+    <div class="temps" id="hTemps"></div>
+    <div class="card hlist">
+      <div id="hFilter"><div><div class="what">Air filter</div><div class="detail" id="hFilterText">–</div></div><span class="pill wait" id="hFilterPill">–</span></div>
+      <div id="hCo" hidden><div><div class="what">Carbon monoxide</div><div class="detail" id="hCoText">–</div></div><span class="pill" id="hCoPill">–</span></div>
+      <div><div><div class="what">Today</div><div class="detail" id="hToday">–</div></div></div>
+    </div>
+    <button class="btn ghost small more" id="hMore">All readings</button>
+  </section>
+
+  <section id="live">
     <div class="card alert" id="alert" hidden></div>
     <!-- Dashboard widgets. Order and visibility come from the saved layout (Customize dashboard);
          data-hide marks widgets that start hidden. -->
@@ -356,11 +395,56 @@ function render(s) {
   $("filterText").classList.toggle("bad", !!s.filter_dirty);
   $("filterBar").classList.toggle("due", !!s.filter_due || !!s.filter_dirty);
   $("filterBar").firstElementChild.style.width = `${life ? Math.min(100, 100 * used / life) : 0}%`;
+  renderHome(s);
   const alert = $("alert");
   alert.hidden = !s.problem;
   alert.textContent = s.problem ? `Problem: ${s.alerts.replaceAll("_", " ").replaceAll(",", ", ")}` : "";
   $("meta").textContent = `${s.link} ${s.ip} · MQTT ${s.mqtt ? "connected" : "off"} · SD ${s.sd ? "logging" : "off"} · up ${Math.floor(s.uptime_s / 3600)} h`;
 }
+
+// Home: what the furnace is doing, whether anything is wrong, the temperatures people look at, and
+// the filter. Everything else is on the Live tab.
+const HOME_PHASE = {
+  idle: "Idle", heat_call: "Starting up", ignition: "Lighting", low_fire: "Heating, low fire",
+  high_fire: "Heating, high fire", post_purge: "Finishing", blower_overrun: "Cooling down",
+  fan_only: "Fan only", lockout: "Locked out",
+};
+function renderHome(s) {
+  const heating = ["heat_call", "ignition", "low_fire", "high_fire", "post_purge", "blower_overrun"].includes(s.phase);
+  const bad = !!s.problem || s.phase === "lockout";
+  $("hero").classList.toggle("bad", bad);
+  $("hDot").className = `dot${bad ? " bad" : heating ? " on" : ""}`;
+  $("hPhase").textContent = HOME_PHASE[s.phase] || s.phase;
+  $("hSub").textContent = bad ? `Problem: ${(s.alerts || s.board_status || "").replaceAll("_", " ").replaceAll(",", ", ")}`
+    : s.phase === "high_fire" || s.phase === "low_fire" ? `Supply air ${fmtPlain(temp(s.t_supply), 1)}${tUnit}, ${fmtPlain(rise(s.delta_t), 0)}${tUnit} above return`
+    : "No problems";
+  // Up to three temperatures: room and outdoor when fitted, then supply and return air.
+  const t = [];
+  if (s.room_fitted) t.push(["Inside", s.t_room]);
+  if (s.out_fitted) t.push(["Outside", s.t_out]);
+  t.push(["Supply air", s.t_supply], ["Return air", s.t_return]);
+  $("hTemps").innerHTML = t.slice(0, 3).map(([n, v]) =>
+    `<div class="card"><div class="label">${n}</div><div class="big">${fmtPlain(temp(v), 1)}<small>${tUnit}</small></div></div>`).join("");
+  // Filter: dirty from its pressure drop when that's fitted, otherwise blower hours.
+  const pill = (el, cls, text) => { el.className = `pill${cls ? ` ${cls}` : ""}`; el.textContent = text; };
+  const due = !!s.filter_due, dirty = !!s.filter_dirty, dec = pressInwc ? 2 : 0;
+  if (dirty || due) pill($("hFilterPill"), "bad", "Change it");
+  else if (s.filter_press && s.filter_dirty_pa == null) pill($("hFilterPill"), "wait", "Learning");
+  else pill($("hFilterPill"), "", "OK");
+  const hrs = s.filter_life_h ? `${(s.filter_h ?? 0).toFixed(0)} of ${s.filter_life_h} blower hours` : `${(s.filter_h ?? 0).toFixed(0)} blower hours`;
+  $("hFilterText").textContent = s.filter_press && s.filter_dp != null
+    ? `Pressure drop ${pressShown(s.filter_dp).toFixed(dec)}${s.filter_dirty_pa != null ? ` of ${pressShown(s.filter_dirty_pa).toFixed(dec)}` : ""} ${pressLabel()}`
+    : hrs;
+  $("hCo").hidden = !s.co_ppm_fitted;
+  if (s.co_ppm_fitted) {
+    pill($("hCoPill"), s.co_alarm ? "bad" : "", s.co_alarm ? "Alarm" : "OK");
+    $("hCoText").textContent = `${fmtPlain(s.co_ppm, 0)} ppm`;
+  }
+  const m = s.burner_min_today ?? 0;
+  $("hToday").textContent = `${s.cycles_today ?? 0} heating cycle${s.cycles_today === 1 ? "" : "s"} · burner on ${m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`}`;
+}
+const fmtPlain = (v, d) => typeof v !== "number" || !isFinite(v) ? "–" : (Number(v.toFixed(d)) || 0).toFixed(d);
+$("hMore").onclick = () => document.querySelector('nav button[data-tab="live"]').click();
 
 function connect() {
   const ws = new WebSocket(`ws://${location.host}/ws`);
