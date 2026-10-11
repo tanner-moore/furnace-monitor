@@ -47,10 +47,10 @@ struct Config {
   // Up to three 0-10 V differential pressure transmitters (AI 7-9 suggested), in pascals.
   // Names show on the dashboard and in Home Assistant; low/high are what each reads at 0 V and 10 V.
   uint8_t aiPress1 = 0, aiPress2 = 0, aiPress3 = 0;
-  String press1Name = "Supply static", press2Name = "Return static", press3Name = "Inducer draft";
+  String press1Name = "Filter pressure drop", press2Name = "TESP", press3Name = "Pressure 3";
   float press1LowPa = 0.0f, press1HighPa = 249.09f;     // 0 to 1 in. w.c.
-  float press2LowPa = -249.09f, press2HighPa = 0.0f;    // -1 to 0 in. w.c.
-  float press3LowPa = -498.18f, press3HighPa = 0.0f;    // -2 to 0 in. w.c.
+  float press2LowPa = 0.0f, press2HighPa = 498.18f;     // 0 to 2 in. w.c.
+  float press3LowPa = 0.0f, press3HighPa = 249.09f;     // 0 to 1 in. w.c.
   String pressUnit = "inwc";  // shown on the web page as inches of water ("inwc") or pascals ("Pa")
 
   // Outdoor temperature from Open-Meteo, used when no outdoor sensor is wired or it fails.

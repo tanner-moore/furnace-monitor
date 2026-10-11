@@ -22,7 +22,7 @@ The full build plan (sensors, wiring, safety notes) is in the project's [build p
 | CO level (optional) | CO transmitter with a 0-10 V output, in ppm (default 25 ppm/V, alert at 35 ppm) | AI 4 (tick CO sensor on the General tab) |
 | Room temperature (optional) | Temperature transmitter with a 0-10 V output (default 0 to 50 °C) | AI 5 (tick Room temperature sensor on the General tab) |
 | Outdoor temperature (optional) | Temperature transmitter with a 0-10 V output, outdoor rated (default -40 to 60 °C) | AI 6 (tick Outdoor temperature sensor on the General tab) |
-| Pressures (optional, up to 3, renamable) | Differential pressure transmitters with a 0-10 V output, e.g. supply and return duct static and inducer draft (defaults 0 to 1, -1 to 0 and -2 to 0 in. w.c.) | AI 7, 8, 9 (tick Pressure sensor 1-3 on the General tab) |
+| Pressures (optional, up to 3, renamable) | Differential pressure transmitters with a 0-10 V output, set up by default as filter pressure drop (0 to 1 in. w.c.) and total external static pressure, TESP (0 to 2 in. w.c.), plus a spare (0 to 1 in. w.c.) | AI 7, 8, 9 (tick Pressure sensor 1-3 on the General tab) |
 | Spare probe (optional, renamable) | PT100, 3-wire | PT100 4 |
 
 Untick any sensor that isn't fitted on the Settings General tab. That saves its input as 0, which the firmware treats as not fitted, and greys out its settings on the other tabs. The CO sensor adds CO level and alerts to Home Assistant; it does not replace the CO alarms the house already needs.
@@ -31,7 +31,7 @@ The CO16 has four PT100 channels, and supply, return and flue use three of them,
 
 Outdoor temperature can also come from [Open-Meteo](https://open-meteo.com/), a free weather service that needs no account. Tick "Outdoor temperature from Open-Meteo" on the General tab and enter your latitude and longitude on the Network tab. The board fetches the current temperature every 15 minutes. When an outdoor sensor is also fitted, the sensor is used and Open-Meteo fills in if it fails. Both are off by default.
 
-Pressure sensors only read air pressure through a tube. For duct static, use a static-pressure tip in the duct. For inducer draft, tee into the inducer pressure-switch hose with a tight fitting: that hose is part of a safety circuit, and a leak there makes the pressure switch open and the furnace shut down. Gas pressure is deliberately not offered, because measuring it permanently means adding a fitting to the gas valve, and that is a job for a gas fitter, not a monitor.
+Pressure sensors only read air pressure through tubes to static-pressure tips in the ductwork. For filter pressure drop, put one tip in the return just before the filter (high port) and one just after it (low port). For TESP, put one tip in the supply plenum just above the furnace, before any cooling coil (high port), and one in the return between the filter and the furnace (low port). Nothing connects to the furnace's own pressure-switch hoses. Gas pressure is deliberately not offered, because measuring it permanently means adding a fitting to the gas valve, and that is a job for a gas fitter, not a monitor.
 
 ## What it tracks
 

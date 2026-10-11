@@ -27,11 +27,11 @@ const seed = arg("seed", "1");
 const allSensors = process.argv.includes("--all-sensors");
 // Made-up readings for the optional sensors: a room near 21 °C, an outdoor day/night swing,
 // a basement probe and a trace of CO.
-// Made-up pressures: duct static follows the blower, draft follows the inducer.
+// Made-up pressures: filter drop and TESP both follow the blower.
 const pressures = (s) => {
-  const wob = (k) => Math.sin(s.time / 97 + k) * 3;
-  return { p1: (s.blower ? 115 + s.i_blower * 6 : 0) + wob(1), p2: (s.blower ? -85 - s.i_blower * 4 : 0) + wob(2),
-           p3: (s.inducer ? (s.inducer_high ? -330 : -210) : 0) + wob(3) };
+  const wob = (k) => Math.sin(s.time / 97 + k) * 2;
+  return { p1: (s.blower ? 30 + s.i_blower * 3 : 0) + wob(1), p2: (s.blower ? 125 + s.i_blower * 8 : 0) + wob(2),
+           p3: (s.blower ? 60 + s.i_blower * 2 : 0) + wob(3) };
 };
 const extras = (t) => ({
   room: 21 + 0.6 * Math.sin(t / 2700), outdoor: 6 + 5 * Math.sin(2 * Math.PI * (t / 86400 - 0.35)),
@@ -83,8 +83,8 @@ function absorb(s) {
     const x = extras(s.time);
     Object.assign(state, { room_fitted: true, t_room: x.room, out_fitted: true, t_out: x.outdoor, out_src: "weather",
                            spare_fitted: true, spare_name: "Basement", t_spare: x.spare, co_ppm_fitted: true, co_ppm: x.co,
-                           ...pressures(s), p1_fitted: true, p2_fitted: true, p3_fitted: true, p1_name: "Supply static",
-                           p2_name: "Return static", p3_name: "Inducer draft", press_unit: "inwc" });
+                           ...pressures(s), p1_fitted: true, p2_fitted: true, p3_fitted: true, p1_name: "Filter pressure drop",
+                           p2_name: "TESP", p3_name: "Pressure 3", press_unit: "inwc" });
   }
 }
 
@@ -119,8 +119,8 @@ const CONFIG = {
   rtdSupply: 1, rtdReturn: 2, rtdFlue: 3, rtdSpare: 0, offsetSupply: 0, offsetReturn: 0, offsetFlue: 0, offsetSpare: 0,
   boardPreset: "generic", aiCo: 0, coPpmPerVolt: 25, coAlertPpm: 35, aiRoom: 0, roomLowC: 0, roomHighC: 50,
   aiOutdoor: 0, outdoorLowC: -40, outdoorHighC: 60, weatherOn: false, weatherLat: 0, weatherLon: 0, dashLayout: "", dashChart: "",
-  aiPress1: 0, aiPress2: 0, aiPress3: 0, press1Name: "Supply static", press2Name: "Return static", press3Name: "Inducer draft",
-  press1LowPa: 0, press1HighPa: 249.09, press2LowPa: -249.09, press2HighPa: 0, press3LowPa: -498.18, press3HighPa: 0, pressUnit: "inwc",
+  aiPress1: 0, aiPress2: 0, aiPress3: 0, press1Name: "Filter pressure drop", press2Name: "TESP", press3Name: "Pressure 3",
+  press1LowPa: 0, press1HighPa: 249.09, press2LowPa: 0, press2HighPa: 498.18, press3LowPa: 0, press3HighPa: 249.09, pressUnit: "inwc",
   spareName: "Spare",
   model: { inducerOnAmps: 0.3, inducerHighAmps: 1.2, blowerOnAmps: 1, flameConfirmS: 5, ignitionTimeoutS: 90,
            shortCycleS: 180, blowerDelayS: 90, settleS: 300, minDeltaTC: 15, maxSupplyC: 85, minFlueRiseC: 10,
