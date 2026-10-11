@@ -260,7 +260,8 @@ const LAMPS = [
   ["blower", "Blower"], ["co_alarm", "CO alarm"],
 ];
 const $ = (id) => document.getElementById(id);
-const fmt = (v, unit, d = 1) => typeof v !== "number" || !isFinite(v) ? "–" : `${v.toFixed(d)}<span class="unit"> ${unit}</span>`;
+// A reading that rounds to zero shows as 0, not -0.
+const fmt = (v, unit, d = 1) => typeof v !== "number" || !isFinite(v) ? "–" : `${(Number(v.toFixed(d)) || 0).toFixed(d)}<span class="unit"> ${unit}</span>`;
 // Temperature units come from the board's setting (General tab); the browser's language is only
 // the guess until the first state arrives.
 let useF = false;
@@ -344,7 +345,16 @@ function render(s) {
   $("filterText").textContent = life
     ? `${used.toFixed(0)} of ${life} blower hours${s.filter_due ? " · change it now" : ""}${s.filter_changed ? ` · changed ${new Date(s.filter_changed * 1000).toLocaleDateString()}` : ""}`
     : `${used.toFixed(0)} blower hours`;
-  $("filterBar").classList.toggle("due", !!s.filter_due);
+  if (s.filter_press) {
+    const dp = pressShown(s.filter_dp), lim = pressShown(s.filter_dirty_pa), dec = pressInwc ? 2 : 0;
+    const now = dp == null ? "–" : dp.toFixed(dec);
+    $("filterText").textContent += lim == null
+      ? ` · pressure drop ${now} ${pressLabel()} · learning the new filter, ${s.filter_learn_left} blower runs to go`
+      : ` · pressure drop ${now} of ${lim.toFixed(dec)} ${pressLabel()}${s.filter_mode === "auto" ? " (auto)" : ""}` +
+        (s.filter_dirty ? " · dirty, change it now" : "");
+  }
+  $("filterText").classList.toggle("bad", !!s.filter_dirty);
+  $("filterBar").classList.toggle("due", !!s.filter_due || !!s.filter_dirty);
   $("filterBar").firstElementChild.style.width = `${life ? Math.min(100, 100 * used / life) : 0}%`;
   const alert = $("alert");
   alert.hidden = !s.problem;
@@ -761,7 +771,7 @@ const SETTINGS_TABS = [
       ["aiRoom", "Room temperature sensor", "0-10 V temperature transmitter", "sensor"],
       ["aiOutdoor", "Outdoor temperature sensor", "0-10 V temperature transmitter", "sensor"],
     ] },
-    { title: "Pressure sensors", note: "0-10 V differential pressure transmitters. Name them on the Wiring tab.", fields: [
+    { title: "Pressure sensors", note: "Sensirion SDP810 or SDP811 sensors on the I2C bus, or 0-10 V transmitters. Pick the type and name them on the Wiring tab.", fields: [
       ["aiPress1", "Pressure sensor 1", "", "sensor"],
       ["aiPress2", "Pressure sensor 2", "", "sensor"],
       ["aiPress3", "Pressure sensor 3", "", "sensor"],
@@ -823,12 +833,15 @@ const SETTINGS_TABS = [
       ["aiRoom", "Room temperature sensor"],
       ["aiOutdoor", "Outdoor temperature sensor"],
     ] },
-    { title: "Pressure sensors", note: "CO16 analog input number, 1 to 16, and the name shown on the dashboard and in Home Assistant.", fields: [
-      ["aiPress1", "Pressure sensor 1"],
+    { title: "Pressure sensors", note: "The sensor type, the CO16 analog input for a 0-10 V transmitter (1 to 16), and the name shown on the dashboard and in Home Assistant. The SDP810 and SDP811 have different I2C addresses, so one of each can be fitted.", fields: [
+      ["press1Type", "Pressure sensor 1 type", "", "ptype"],
+      ["aiPress1", "Pressure sensor 1 analog input"],
       ["press1Name", "Pressure sensor 1 name"],
-      ["aiPress2", "Pressure sensor 2"],
+      ["press2Type", "Pressure sensor 2 type", "", "ptype"],
+      ["aiPress2", "Pressure sensor 2 analog input"],
       ["press2Name", "Pressure sensor 2 name"],
-      ["aiPress3", "Pressure sensor 3"],
+      ["press3Type", "Pressure sensor 3 type", "", "ptype"],
+      ["aiPress3", "Pressure sensor 3 analog input"],
       ["press3Name", "Pressure sensor 3 name"],
     ] },
     { title: "Temperature probes", note: "PT100 channel, 1 to 4. Turn probes on or off on the General tab.", fields: [
@@ -855,7 +868,7 @@ const SETTINGS_TABS = [
       ["outdoorLowC", "Reads this at 0 V", "", "temp"],
       ["outdoorHighC", "Reads this at 10 V", "", "temp"],
     ] },
-    { title: "Pressure sensors", note: "The pressures each sensor's range runs between, from its label. Below zero is suction.", fields: [
+    { title: "Pressure sensors", note: "For 0-10 V transmitters: the pressures each one's range runs between, from its label. Below zero is suction. SDP810 and SDP811 sensors need no calibration.", fields: [
       ["press1LowPa", "Sensor 1 reads this at 0 V", "", "press"],
       ["press1HighPa", "Sensor 1 reads this at 10 V", "", "press"],
       ["press2LowPa", "Sensor 2 reads this at 0 V", "", "press"],
@@ -901,6 +914,9 @@ const SETTINGS_TABS = [
     ] },
     { title: "Air filter", fields: [
       ["filterLifeHours", "Change the filter every", "Counted in blower running hours", "h"],
+      ["filterPressSensor", "Dirty-filter alarm uses", "The pressure sensor across the filter", "psensor"],
+      ["filterMode", "Dirty-filter limit", "Auto learns each new filter's reading over its first 10 blower runs and flags it dirty at twice that. It also spots a new filter by itself when the pressure drop falls sharply, or press Filter changed", "fmode"],
+      ["filterDirtyPa", "Manual: filter dirty at or above", "Pressure drop with the blower running. Under it counts as clean", "press"],
     ] },
   ] },
   { id: "display", name: "Screen", sections: [
@@ -966,6 +982,15 @@ function applySensors() {
     if (!dep.bool) off.add(k);
     for (const f of dep.fields || []) off.add(f);
   }
+  // I2C pressure sensors use no analog input and need no range.
+  for (const i of [1, 2, 3]) {
+    if (formField(`press${i}Type`)?.value === "ai") continue;
+    off.add(`aiPress${i}`).add(`press${i}LowPa`).add(`press${i}HighPa`);
+  }
+  // The dirty-filter limit needs its pressure sensor switched on.
+  const fs = Number(formField("filterPressSensor")?.value);
+  if (!fs || document.querySelector(`[data-sensor="aiPress${fs}"]`)?.checked === false) off.add("filterMode").add("filterDirtyPa");
+  if (formField("filterMode")?.value !== "manual") off.add("filterDirtyPa");
   document.querySelectorAll("#settingsForm [data-def]").forEach((el) => {
     el.disabled = off.has(el.name);
     el.closest("label").classList.toggle("off", el.disabled);
@@ -1060,13 +1085,19 @@ async function loadSettings() {
     if (kind !== "secret" && v === undefined) return "";
     const isTemp = kind === "temp" || kind === "dtemp";
     const unit = isTemp ? `<span class="tu">${settingsUnit()}</span>` : kind === "press" ? `<span class="pu">${settingsPressUnit()}</span>`
-      : kind === "tz" || kind === "secret" || kind === "units" || kind === "punits" ? "" : kind;
+      : ["tz", "secret", "units", "punits", "ptype", "psensor", "fmode"].includes(kind) ? "" : kind;
     const name = `${attr(label)}${unit ? ` (${unit})` : ""}${hint ? `<span class="hint">${attr(hint)}</span>` : ""}`;
     if (kind === "secret") return `<label><span>${name}</span><input type="password" name="${k}" placeholder="unchanged" autocomplete="new-password"></label>`;
     let input;
     if (kind === "tz") input = tzSelect(v);
     else if (kind === "units") input = `<select name="${k}" data-def>${[["F", "°F (Fahrenheit)"], ["C", "°C (Celsius)"]]
       .map(([u, n]) => `<option value="${u}" ${u === v ? "selected" : ""}>${n}</option>`).join("")}</select>`;
+    else if (kind === "ptype") input = `<select name="${k}" data-def>${[["sdp810", "Sensirion SDP810 (I2C 0x25)"], ["sdp811", "Sensirion SDP811 (I2C 0x26)"], ["ai", "0-10 V transmitter"]]
+      .map(([u, n]) => `<option value="${u}" ${u === v ? "selected" : ""}>${n}</option>`).join("")}</select>`;
+    else if (kind === "fmode") input = `<select name="${k}" data-def>${[["auto", "Auto: twice the new filter's reading"], ["manual", "Manual: a set value"]]
+      .map(([u, n]) => `<option value="${u}" ${u === v ? "selected" : ""}>${n}</option>`).join("")}</select>`;
+    else if (kind === "psensor") input = `<select name="${k}" data-num="true" data-kind="" data-def>${[[0, "Off"], ...[1, 2, 3].map((i) => [i, `Sensor ${i}: ${cfg[`press${i}Name`]}`])]
+      .map(([u, n]) => `<option value="${u}" ${u === v ? "selected" : ""}>${attr(n)}</option>`).join("")}</select>`;
     else if (kind === "punits") input = `<select name="${k}" data-def>${[["inwc", "Inches of water (in. w.c.)"], ["Pa", "Pascals (Pa)"]]
       .map(([u, n]) => `<option value="${u}" ${u === v ? "selected" : ""}>${n}</option>`).join("")}</select>`;
     else if (typeof v === "boolean") input = `<input type="checkbox" name="${k}" ${v ? "checked" : ""} data-bool="true" data-def>`;
@@ -1114,6 +1145,7 @@ async function loadSettings() {
     markField(el);
   });
   document.querySelectorAll("#settingsForm [data-sensor]").forEach((b) => b.onchange = () => toggleSensor(b));
+  for (const k of ["press1Type", "press2Type", "press3Type", "filterPressSensor", "filterMode"]) formField(k)?.addEventListener("change", applySensors);
   document.querySelectorAll("#settingsForm [data-sreset]").forEach((b) => b.onclick = () => {
     const box = document.querySelector(`[data-sensor="${b.dataset.sreset}"]`);
     box.checked = !!Number(defaultFor(box.dataset.sensor));

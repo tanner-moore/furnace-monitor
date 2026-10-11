@@ -44,9 +44,13 @@ struct Config {
   uint8_t aiOutdoor = 0;            // outdoor temperature sensor (AI 6 suggested)
   float outdoorLowC = -40.0f, outdoorHighC = 60.0f;  // what the outdoor sensor reads at 0 V and at 10 V
 
-  // Up to three 0-10 V differential pressure transmitters (AI 7-9 suggested), in pascals.
-  // Names show on the dashboard and in Home Assistant; low/high are what each reads at 0 V and 10 V.
+  // Up to three differential pressure sensors, in pascals. Each is a 0-10 V transmitter on an
+  // analog input (AI 7-9 suggested; type "ai") or a Sensirion sensor on the I2C bus ("sdp810" at
+  // 0x25, "sdp811" at 0x26). aiPressN = 0 means not fitted; for I2C sensors any other value just
+  // means fitted. Names show on the dashboard and in Home Assistant; low/high are what a 0-10 V
+  // transmitter reads at 0 V and 10 V.
   uint8_t aiPress1 = 0, aiPress2 = 0, aiPress3 = 0;
+  String press1Type = "sdp810", press2Type = "sdp811", press3Type = "ai";
   String press1Name = "Filter pressure drop", press2Name = "TESP", press3Name = "Pressure 3";
   float press1LowPa = 0.0f, press1HighPa = 249.09f;     // 0 to 1 in. w.c.
   float press2LowPa = 0.0f, press2HighPa = 498.18f;     // 0 to 2 in. w.c.
@@ -73,10 +77,16 @@ struct Config {
   // Live tab layout from "Customize dashboard": widget names in order, hidden ones prefixed
   // with "-". Blank means the default layout.
   String dashLayout;
-  String dashChart;  // chart widget: "hours|line,line"; blank means 6 h of supply, return, flue and burner
+  String dashChart;  // chart widget: "hours|line,line"; blank means 6 h of supply, return and burner
 
   // Air filter: blower hours between changes.
   uint16_t filterLifeHours = 500;
+  // Dirty filter: the pressure sensor (1-3, 0 = off) that reads the drop across the filter. In
+  // "auto" mode the filter is dirty at twice a new filter's learned reading; in "manual" mode at
+  // filterDirtyPa or over, with the blower running.
+  uint8_t filterPressSensor = 1;
+  String filterMode = "auto";
+  float filterDirtyPa = 62.27f;  // 0.25 in. w.c.
 
   // SD card logging (minute samples, cycles and events) and the built-in screen.
   bool sdLogging = true;

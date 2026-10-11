@@ -24,6 +24,10 @@ struct Snapshot {
   bool inputsOk = false;
   bool sdOk = false;
   uint32_t filterChangedEpoch = 0;  // 0 = never recorded
+  float filterDpPa = NAN;           // filter pressure drop, last minute average with the blower running
+  float filterLimitPa = NAN;        // dirty at or above this; NAN while auto mode is learning
+  uint8_t filterLearnLeft = 0;      // auto mode: blower runs still to learn the clean reading
+  bool filterDirty = false;
   uint32_t lastCycleEpoch = 0;      // when lastCycle ended, 0 = none since boot
 };
 
