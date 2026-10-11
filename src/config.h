@@ -53,6 +53,10 @@ struct Config {
   // which timing values count as defaults there.
   String boardPreset = "generic";
 
+  // Temperature units for the web page and the screen: "F" or "C". MQTT always sends °C and
+  // Home Assistant converts to its own units.
+  String tempUnit = "F";
+
   // Air filter: blower hours between changes.
   uint16_t filterLifeHours = 500;
 
@@ -61,7 +65,6 @@ struct Config {
   bool display = true;
   uint16_t displayWidth = 240, displayHeight = 240;  // ST7789 panel size, to confirm on the board
   uint8_t displayRotation = 0;                      // 0-3
-  bool displayFahrenheit = true;
 
   furnace::Settings model;
 

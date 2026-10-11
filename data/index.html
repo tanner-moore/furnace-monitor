@@ -224,15 +224,19 @@ const LAMPS = [
 ];
 const $ = (id) => document.getElementById(id);
 const fmt = (v, unit, d = 1) => typeof v !== "number" || !isFinite(v) ? "–" : `${v.toFixed(d)}<span class="unit"> ${unit}</span>`;
-const useF = (navigator.language || "").startsWith("en-US");
+// Temperature units come from the board's setting (General tab); the browser's language is only
+// the guess until the first state arrives.
+let useF = (navigator.language || "").startsWith("en-US");
+let tUnit = useF ? "°F" : "°C";
+const setUnits = (f) => { useF = f; tUnit = f ? "°F" : "°C"; };
 const temp = (c) => c == null ? null : useF ? c * 9 / 5 + 32 : c;
-const tUnit = useF ? "°F" : "°C";
 const rise = (c) => c == null ? null : useF ? c * 9 / 5 : c;
 
 $("phases").innerHTML = PHASES.map(([k, n]) => `<div data-p="${k}">${n}</div>`).join("");
 $("lamps").innerHTML = LAMPS.map(([k, n]) => `<span class="lamp" data-l="${k}">${n}</span>`).join("");
 
 function render(s) {
+  if (s.temp_unit) setUnits(s.temp_unit === "F");
   document.querySelectorAll("[data-p]").forEach((el) => el.classList.toggle("on", el.dataset.p === s.phase));
   document.querySelectorAll("[data-l]").forEach((el) => el.classList.toggle("on", !!s[el.dataset.l]));
   $("t_supply").innerHTML = fmt(temp(s.t_supply), tUnit);
@@ -484,6 +488,9 @@ const SETTINGS_TABS = [
       ["rtdFlue", "Flue pipe", "", "sensor"],
       ["rtdSpare", "Spare probe", "Name it on the Wiring tab", "sensor"],
     ] },
+    { title: "Display", fields: [
+      ["tempUnit", "Temperature units", "For this page and the built-in screen", "units"],
+    ] },
     { title: "Screen and SD card", fields: [
       ["display", "Built-in screen"],
       ["sdLogging", "SD card logging", "Minute readings, cycles and events"],
@@ -587,7 +594,6 @@ const SETTINGS_TABS = [
   ] },
   { id: "display", name: "Screen", sections: [
     { fields: [
-      ["displayFahrenheit", "Screen shows °F"],
       ["displayWidth", "Screen width", "", "px"],
       ["displayHeight", "Screen height", "", "px"],
       ["displayRotation", "Screen rotation", "0 to 3, in quarter turns"],
@@ -633,7 +639,7 @@ const SENSOR_FIELDS = {
   rtdSpare: { restore: 4, fields: ["offsetSpare", "spareName"] },
   aiCo: { restore: 4, fields: ["coPpmPerVolt", "coAlertPpm"] },
   aiRoom: { restore: 5, fields: ["roomLowC", "roomHighC"] },
-  display: { bool: true, fields: ["displayFahrenheit", "displayWidth", "displayHeight", "displayRotation"] },
+  display: { bool: true, fields: ["displayWidth", "displayHeight", "displayRotation"] },
   sdLogging: { bool: true },
 };
 const formField = (k) => document.querySelector(`#settingsForm [name="${k}"]`);
@@ -702,9 +708,11 @@ function applyPreset(id) {
   }
   markAll();
 }
-const tUnitS = useF ? "°F" : "°C";
-const toShown = (kind, v) => !useF ? v : kind === "temp" ? Math.round((v * 9 / 5 + 32) * 10) / 10 : kind === "dtemp" ? Math.round(v * 9 / 5 * 10) / 10 : v;
-const fromShown = (kind, v) => !useF ? v : kind === "temp" ? (v - 32) * 5 / 9 : kind === "dtemp" ? v * 5 / 9 : v;
+// The settings form keeps its own unit, so a live update can't switch it under unsaved edits.
+let settingsF = true;
+const settingsUnit = () => settingsF ? "°F" : "°C";
+const toShown = (kind, v) => !settingsF ? v : kind === "temp" ? Math.round((v * 9 / 5 + 32) * 10) / 10 : kind === "dtemp" ? Math.round(v * 9 / 5 * 10) / 10 : v;
+const fromShown = (kind, v) => !settingsF ? v : kind === "temp" ? (v - 32) * 5 / 9 : kind === "dtemp" ? v * 5 / 9 : v;
 let settingsTab = "general";
 function showSettingsTab(id) {
   settingsTab = id;
@@ -719,6 +727,7 @@ async function loadSettings() {
     return;
   }
   const cfg = await r.json();
+  settingsF = cfg.tempUnit ? cfg.tempUnit === "F" : useF;
   settingsDefaults = d && d.ok ? await d.json() : {};
   const get = (k) => k.startsWith("model.") ? cfg.model?.[k.slice(6)] : cfg[k];
   const placed = new Set();
@@ -731,11 +740,14 @@ async function loadSettings() {
       `<label><span>${attr(label)}${hint ? `<span class="hint">${attr(hint)}</span>` : ""}</span><span class="ctl"><input type="checkbox" data-sensor="${k}" ${get(k) ? "checked" : ""}><button type="button" class="reset" data-sreset="${k}" hidden>Reset</button></span></label>`;
     const v = get(k);
     if (kind !== "secret" && v === undefined) return "";
-    const unit = kind === "temp" || kind === "dtemp" ? tUnitS : kind === "tz" || kind === "secret" ? "" : kind;
+    const isTemp = kind === "temp" || kind === "dtemp";
+    const unit = isTemp ? `<span class="tu">${settingsUnit()}</span>` : kind === "tz" || kind === "secret" || kind === "units" ? "" : kind;
     const name = `${attr(label)}${unit ? ` (${unit})` : ""}${hint ? `<span class="hint">${attr(hint)}</span>` : ""}`;
     if (kind === "secret") return `<label><span>${name}</span><input type="password" name="${k}" placeholder="unchanged" autocomplete="new-password"></label>`;
     let input;
     if (kind === "tz") input = tzSelect(v);
+    else if (kind === "units") input = `<select name="${k}" data-def>${[["F", "°F (Fahrenheit)"], ["C", "°C (Celsius)"]]
+      .map(([u, n]) => `<option value="${u}" ${u === v ? "selected" : ""}>${n}</option>`).join("")}</select>`;
     else if (typeof v === "boolean") input = `<input type="checkbox" name="${k}" ${v ? "checked" : ""} data-bool="true" data-def>`;
     else {
       const num = typeof v === "number";
@@ -754,6 +766,16 @@ async function loadSettings() {
     '<div class="card savebar"><button class="btn">Save and restart</button><span class="note">Saves every tab. The board restarts to apply changes. Red fields differ from their defaults.</span></div>';
   document.querySelectorAll("#settingsTabs button").forEach((b) => b.onclick = () => showSettingsTab(b.dataset.st));
   document.querySelector('select[name="boardPreset"]').onchange = (e) => applyPreset(e.target.value);
+  // Switching units converts the temperature fields in place, so unsaved edits are kept.
+  const unitSel = document.querySelector('select[name="tempUnit"]');
+  if (unitSel) unitSel.addEventListener("change", () => {
+    const temps = [...document.querySelectorAll('#settingsForm input[data-kind="temp"], #settingsForm input[data-kind="dtemp"]')];
+    const c = temps.map((el) => fromShown(el.dataset.kind, Number(el.value)));
+    settingsF = unitSel.value === "F";
+    temps.forEach((el, i) => { el.value = toShown(el.dataset.kind, c[i]); });
+    document.querySelectorAll("#settingsForm .tu").forEach((u) => { u.textContent = settingsUnit(); });
+    markAll();
+  });
   document.querySelectorAll("#settingsForm [data-def]").forEach((el) => el.addEventListener(el.tagName === "SELECT" || el.dataset.bool ? "change" : "input", () => markField(el)));
   document.querySelectorAll("#settingsForm .reset").forEach((b) => b.onclick = () => {
     const el = document.querySelector(`#settingsForm [name="${b.dataset.reset}"]`);

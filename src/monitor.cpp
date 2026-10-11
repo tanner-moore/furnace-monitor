@@ -504,6 +504,7 @@ void stateJson(const Snapshot& s, JsonObject o) {
   putNum(o, "t_room", s.roomC);
   putNum(o, "co_ppm", s.coPpm, 0);
   o["spare_name"] = config.spareName;
+  o["temp_unit"] = config.tempUnit == "C" ? "C" : "F";
   o["spare_fitted"] = config.rtdSpare != 0;
   o["room_fitted"] = config.aiRoom != 0;
   o["co_ppm_fitted"] = config.aiCo != 0;

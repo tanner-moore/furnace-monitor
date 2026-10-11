@@ -14,13 +14,12 @@ static const char* kPath = "/config.json";
   X(diW1) X(diW2) X(diG) X(diMvl) X(diMvh) X(diCo)       \
   X(coOnOpen) X(filterLifeHours) X(sdLogging) X(display)   \
   X(displayWidth) X(displayHeight) X(displayRotation)      \
-  X(displayFahrenheit)                                     \
   X(aiInducer) X(aiBlower) X(aiLed)                        \
   X(inducerAmpsPerVolt) X(blowerAmpsPerVolt) X(ledOnVolts) \
   X(rtdSupply) X(rtdReturn) X(rtdFlue) X(rtdSpare)         \
   X(offsetSupply) X(offsetReturn) X(offsetFlue) X(offsetSpare) \
   X(boardPreset) X(aiCo) X(coPpmPerVolt) X(coAlertPpm) X(aiRoom) \
-  X(roomLowC) X(roomHighC) X(spareName)
+  X(roomLowC) X(roomHighC) X(spareName) X(tempUnit)
 
 #define SECRET_FIELDS(X) X(wifiPass) X(mqttPass) X(webPass)
 
