@@ -38,7 +38,7 @@ enum Alert : uint32_t {
   ALERT_FLUE_NO_RISE = 1u << 7,       // firing but flue temperature not rising
   ALERT_SENSOR_FAULT = 1u << 8,       // a configured sensor reads invalid
   ALERT_BOARD_FAULT = 1u << 9,        // control board LED shows a fault code
-  ALERT_CO_ALARM = 1u << 10,          // the CO alarm's relay contact reports CO
+  ALERT_CO_ALARM = 1u << 10,          // the CO sensor reads at or above the alert level
 };
 
 // Writes a comma-separated list of alert names into buf. Returns buf.
@@ -56,7 +56,7 @@ struct Inputs {
   float supplyC = NAN;
   float returnC = NAN;
   float flueC = NAN;
-  bool coAlarm = false;      // CO alarm relay contact, when one is wired
+  bool coAlarm = false;      // CO sensor at or above the alert level, when one is wired
   bool sensorFault = false;  // set by the driver when an RTD/ADC reports a fault
   int boardCode = 0;         // 0 = normal/unknown, else flash count (or 99 = steady on)
 };

@@ -28,8 +28,6 @@ struct Config {
 
   // Digital inputs (1-16, 0 = not wired)
   uint8_t diW1 = 1, diW2 = 2, diG = 4, diMvl = 5, diMvh = 6;
-  uint8_t diCo = 0;      // CO alarm relay contact (DI 3 suggested)
-  bool coOnOpen = false; // true when the contact opens on alarm (NC wiring)
 
   // Analog inputs (1-16, 0 = not wired) and scaling
   uint8_t aiInducer = 1, aiBlower = 2, aiLed = 3;

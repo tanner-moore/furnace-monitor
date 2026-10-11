@@ -145,7 +145,6 @@ void begin() {
     cfg["diG"] = config.diG;
     cfg["diMvl"] = config.diMvl;
     cfg["diMvh"] = config.diMvh;
-    cfg["diCo"] = config.diCo;
     cfg["aiInducer"] = config.aiInducer;
     cfg["aiBlower"] = config.aiBlower;
     cfg["aiLed"] = config.aiLed;

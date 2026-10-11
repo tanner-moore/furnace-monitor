@@ -11,8 +11,8 @@ static const char* kPath = "/config.json";
   X(hostname) X(wifiSsid) X(tz) X(ntpServer)               \
   X(mqttHost) X(mqttPort) X(mqttUser) X(baseTopic)         \
   X(discoveryPrefix) X(webUser)                            \
-  X(diW1) X(diW2) X(diG) X(diMvl) X(diMvh) X(diCo)       \
-  X(coOnOpen) X(filterLifeHours) X(sdLogging) X(display)   \
+  X(diW1) X(diW2) X(diG) X(diMvl) X(diMvh)                 \
+  X(filterLifeHours) X(sdLogging) X(display)               \
   X(displayWidth) X(displayHeight) X(displayRotation)      \
   X(aiInducer) X(aiBlower) X(aiLed)                        \
   X(inducerAmpsPerVolt) X(blowerAmpsPerVolt) X(ledOnVolts) \

@@ -379,7 +379,7 @@ async function loadCycles() {
 }
 
 // Bench: raw readings, refreshed every second while the tab is open.
-const DI_NAMES = { diW1: "W1", diW2: "W2", diG: "G", diMvl: "MVL", diMvh: "MVH", diCo: "CO" };
+const DI_NAMES = { diW1: "W1", diW2: "W2", diG: "G", diMvl: "MVL", diMvh: "MVH" };
 const AI_NAMES = { aiInducer: "Inducer CT", aiBlower: "Blower CT", aiLed: "LED sensor" };
 const RTD_NAMES = { rtdSupply: "Supply", rtdReturn: "Return", rtdFlue: "Flue", rtdSpare: "Spare" };
 const RTD_FAULTS = [[0x80, "RTD high"], [0x40, "RTD low"], [0x20, "REFIN high"], [0x10, "REFIN low"], [0x08, "RTDIN low"], [0x04, "over/under voltage"]];
@@ -473,7 +473,6 @@ const SETTINGS_TABS = [
       ["diG", "Fan call (G)", "", "sensor"],
       ["diMvl", "Gas valve, low fire (MVL)", "", "sensor"],
       ["diMvh", "Gas valve, high fire (MVH)", "", "sensor"],
-      ["diCo", "CO alarm contact", "", "sensor"],
     ] },
     { title: "Analog sensors", fields: [
       ["aiInducer", "Inducer current sensor", "", "sensor"],
@@ -522,8 +521,6 @@ const SETTINGS_TABS = [
       ["diG", "Fan call (G)"],
       ["diMvl", "Gas valve, low fire (MVL)"],
       ["diMvh", "Gas valve, high fire (MVH)"],
-      ["diCo", "CO alarm contact"],
-      ["coOnOpen", "CO alarm opens the contact", "Tick for a normally closed alarm relay"],
     ] },
     { title: "Analog inputs", note: "CO16 analog input number, 1 to 16. Turn inputs on or off on the General tab.", fields: [
       ["aiInducer", "Inducer current sensor"],
@@ -585,7 +582,7 @@ const SETTINGS_TABS = [
       ["model.maxSupplyC", "Supply air too hot above", "", "temp"],
       ["model.minFlueRiseC", "Flue should warm up by at least", "", "dtemp"],
     ] },
-    { title: "Carbon monoxide", note: "From the CO sensor. The alarm contact on the Wiring tab alerts on its own.", fields: [
+    { title: "Carbon monoxide", note: "From the CO sensor.", fields: [
       ["coAlertPpm", "CO alert at or above", "Household CO alarms sound at 70 ppm after an hour or more", "ppm"],
     ] },
     { title: "Air filter", fields: [
@@ -629,7 +626,6 @@ const SENSOR_FIELDS = {
   diG: {},
   diMvl: { fields: ["model.flameConfirmS", "model.ignitionTimeoutS", "model.ignitionTrials", "model.shortCycleS", "model.blowerDelayS"] },
   diMvh: {},
-  diCo: { restore: 3, fields: ["coOnOpen"] },
   aiInducer: { fields: ["inducerAmpsPerVolt", "model.inducerOnAmps", "model.inducerHighAmps"] },
   aiBlower: { fields: ["blowerAmpsPerVolt", "model.blowerOnAmps", "model.blowerDelayS"] },
   aiLed: { fields: ["ledOnVolts"] },

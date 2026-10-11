@@ -220,9 +220,8 @@ static void task(void*) {
     in.g = inputOn(raw, config.diG);
     in.mvl = inputOn(raw, config.diMvl);
     in.mvh = inputOn(raw, config.diMvh);
-    // CO alert from the alarm's relay contact, or from the CO sensor's reading.
-    in.coAlarm = (config.diCo && inputOn(raw, config.diCo) != config.coOnOpen) ||
-                 (!isnan(coPpm) && coPpm >= config.coAlertPpm);
+    // CO alert from the CO sensor's reading.
+    in.coAlarm = !isnan(coPpm) && coPpm >= config.coAlertPpm;
 
     // LED light sensor every pass, so flashes are not missed.
     if (config.aiLed) {
@@ -546,7 +545,7 @@ void stateJson(const Snapshot& s, JsonObject o) {
   o["filter_changed"] = s.filterChangedEpoch;
 
   o["co_alarm"] = s.in.coAlarm;
-  o["co_fitted"] = config.diCo != 0 || config.aiCo != 0;
+  o["co_fitted"] = config.aiCo != 0;
   o["problem"] = s.st.alerts != 0;
   o["alerts"] = furnace::alertNames(s.st.alerts, alerts, sizeof alerts);
   o["board_code"] = s.in.boardCode;
