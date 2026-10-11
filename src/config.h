@@ -28,8 +28,6 @@ struct Config {
 
   // Digital inputs (1-16, 0 = not wired)
   uint8_t diW1 = 1, diW2 = 2, diG = 4, diMvl = 5, diMvh = 6;
-  uint8_t diCo = 0;      // CO alarm relay contact (DI 3 suggested)
-  bool coOnOpen = false; // true when the contact opens on alarm (NC wiring)
 
   // Analog inputs (1-16, 0 = not wired) and scaling
   uint8_t aiInducer = 1, aiBlower = 2, aiLed = 3;
@@ -53,6 +51,10 @@ struct Config {
   // which timing values count as defaults there.
   String boardPreset = "generic";
 
+  // Temperature units for the web page and the screen: "F" or "C". MQTT always sends °C and
+  // Home Assistant converts to its own units.
+  String tempUnit = "C";
+
   // Air filter: blower hours between changes.
   uint16_t filterLifeHours = 500;
 
@@ -61,7 +63,6 @@ struct Config {
   bool display = true;
   uint16_t displayWidth = 240, displayHeight = 240;  // ST7789 panel size, to confirm on the board
   uint8_t displayRotation = 0;                      // 0-3
-  bool displayFahrenheit = true;
 
   furnace::Settings model;
 

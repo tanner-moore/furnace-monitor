@@ -43,7 +43,7 @@ static void tempLine(GFXcanvas16& c, int16_t y, const char* label, float tempC, 
   c.setCursor(c.width() / 2, y);
   if (isnan(tempC)) {
     c.print("--");
-  } else if (config.displayFahrenheit) {
+  } else if (config.tempUnit == "F") {
     c.printf("%.0f F", isRise ? tempC * 9 / 5 : tempC * 9 / 5 + 32);
   } else {
     c.printf("%.1f C", tempC);
