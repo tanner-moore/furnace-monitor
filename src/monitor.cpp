@@ -10,6 +10,7 @@
 #include "flash_decoder.h"
 #include "rtc_ds3231.h"
 #include "sdlog.h"
+#include "sdp8xx.h"
 #include "weather.h"
 
 namespace monitor {
@@ -209,6 +210,11 @@ static void task(void*) {
   uint32_t lastAnalogMs = 0, lastRtdMs = 0, lastSampleMs = 0, lastSaveMs = 0;
   int lastYday = prefs.getInt("yday", -1);
   bool rtcWritten = false, filterDueWas = false;
+  // Dirty filter: minute averages of the filter's pressure drop while the blower runs.
+  uint32_t lastFilterMs = 0;
+  uint16_t filterRunS = 0, filterN = 0;
+  uint8_t filterOverMin = 0, filterUnderMin = 0;
+  float filterSum = 0;
   MinuteAcc acc;
   acc.reset(0);
   char buf[96];
@@ -255,8 +261,13 @@ static void task(void*) {
       const uint8_t pressAi[3] = {config.aiPress1, config.aiPress2, config.aiPress3};
       const float pressLo[3] = {config.press1LowPa, config.press2LowPa, config.press3LowPa};
       const float pressHi[3] = {config.press1HighPa, config.press2HighPa, config.press3HighPa};
-      for (int i = 0; i < 3; i++)
-        pressPa[i] = pressAi[i] ? pressLo[i] + co16::readAnalogVolts(pressAi[i]) / 10.0f * (pressHi[i] - pressLo[i]) : NAN;
+      const String* pressType[3] = {&config.press1Type, &config.press2Type, &config.press3Type};
+      for (int i = 0; i < 3; i++) {
+        const uint8_t i2c = sdp8xx::addressFor(*pressType[i]);
+        pressPa[i] = !pressAi[i] ? NAN
+                     : i2c      ? sdp8xx::readPa(i2c)
+                                : pressLo[i] + co16::readAnalogVolts(pressAi[i]) / 10.0f * (pressHi[i] - pressLo[i]);
+      }
     }
 
     // Bench mode: one more analog input per pass, all 16 in under a second.
@@ -315,6 +326,8 @@ static void task(void*) {
       model.resetFilter();
       snap.filterChangedEpoch = (uint32_t)epoch;
       filterDueWas = false;
+      snap.filterDirty = false;
+      filterOverMin = filterUnderMin = 0;
       saveTotals();
       addEventLocked("filter changed");
     }
@@ -348,6 +361,53 @@ static void task(void*) {
     const bool filterDue = config.filterLifeHours && st.totals.filterBlowerSeconds >= config.filterLifeHours * 3600u;
     if (filterDue && !filterDueWas) addEventLocked("filter change due");
     filterDueWas = filterDue;
+
+    // Dirty filter, checked once a second. Each minute of blower running (after its first minute,
+    // while the airflow settles) gives one average. Five averages in a row at or above the limit
+    // flag the filter dirty; five below 90% of it clear the flag. The count carries over between
+    // blower runs, so short runs still add up.
+    if (now - lastFilterMs >= 1000) {
+      lastFilterMs = now;
+      const uint8_t fs = config.filterPressSensor;
+      const uint8_t fsAi[3] = {config.aiPress1, config.aiPress2, config.aiPress3};
+      const bool fsOn = fs >= 1 && fs <= 3 && fsAi[fs - 1] && config.filterDirtyPa > 0;
+      const float dp = fsOn ? pressPa[fs - 1] : NAN;
+      // Without a blower current sensor, any real pressure drop means the blower is running.
+      const bool running = config.aiBlower ? st.blowerOn : dp > 5.0f;
+      if (!fsOn) {
+        snap.filterDirty = false;
+        snap.filterDpPa = NAN;
+        filterOverMin = filterUnderMin = 0;
+      }
+      if (!fsOn || !running || isnan(dp)) {
+        filterRunS = filterN = 0;
+        filterSum = 0;
+      } else if (++filterRunS > 60) {
+        filterSum += dp;
+        if (++filterN >= 60) {
+          const float avg = filterSum / filterN;
+          filterSum = 0;
+          filterN = 0;
+          snap.filterDpPa = avg;
+          if (avg >= config.filterDirtyPa) {
+            filterUnderMin = 0;
+            if (filterOverMin < 5) filterOverMin++;
+            if (filterOverMin >= 5 && !snap.filterDirty) {
+              snap.filterDirty = true;
+              snprintf(buf, sizeof buf, "filter dirty: pressure drop %.0f Pa, limit %.0f Pa", avg, config.filterDirtyPa);
+              addEventLocked(buf);
+            }
+          } else if (avg < 0.9f * config.filterDirtyPa) {
+            filterOverMin = 0;
+            if (filterUnderMin < 5) filterUnderMin++;
+            if (filterUnderMin >= 5 && snap.filterDirty) {
+              snap.filterDirty = false;
+              addEventLocked("filter pressure drop back below the limit");
+            }
+          }
+        }
+      }
+    }
 
     snap.uptimeS = now / 1000;
     snap.epoch = epoch;
@@ -598,6 +658,15 @@ void stateJson(const Snapshot& s, JsonObject o) {
     o["filter_due"] = false;
   }
   o["filter_changed"] = s.filterChangedEpoch;
+  // Dirty filter from its pressure drop: the sensor used (0 = off), the last minute average with
+  // the blower running, and the limit, all in Pa.
+  const uint8_t fsAi[3] = {config.aiPress1, config.aiPress2, config.aiPress3};
+  const uint8_t fs = config.filterPressSensor >= 1 && config.filterPressSensor <= 3 &&
+                     fsAi[config.filterPressSensor - 1] && config.filterDirtyPa > 0 ? config.filterPressSensor : 0;
+  o["filter_press"] = fs;
+  putNum(o, "filter_dp", s.filterDpPa);
+  putNum(o, "filter_dirty_pa", config.filterDirtyPa);
+  o["filter_dirty"] = s.filterDirty;
 
   o["co_alarm"] = s.in.coAlarm;
   o["co_fitted"] = config.aiCo != 0;

@@ -85,7 +85,11 @@ static void draw(const monitor::Snapshot& s) {
     c.setTextColor(kOk);
     c.setCursor(8, y);
     c.printf("%lu cycles, %lu min", (unsigned long)s.st.cyclesToday, (unsigned long)(s.st.burnerSecondsToday / 60));
-    if (config.filterLifeHours) {
+    if (s.filterDirty) {
+      c.setCursor(8, y + 22);
+      c.setTextColor(kBad);
+      c.print("Filter dirty");
+    } else if (config.filterLifeHours) {
       const float left = 1.0f - s.st.totals.filterBlowerSeconds / (3600.0f * config.filterLifeHours);
       c.setCursor(8, y + 22);
       c.setTextColor(left <= 0 ? kBad : kMuted);

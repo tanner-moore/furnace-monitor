@@ -24,6 +24,8 @@ struct Snapshot {
   bool inputsOk = false;
   bool sdOk = false;
   uint32_t filterChangedEpoch = 0;  // 0 = never recorded
+  float filterDpPa = NAN;           // filter pressure drop, last minute average with the blower running
+  bool filterDirty = false;         // that drop stayed at or above config.filterDirtyPa
   uint32_t lastCycleEpoch = 0;      // when lastCycle ended, 0 = none since boot
 };
 

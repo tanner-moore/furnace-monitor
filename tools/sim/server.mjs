@@ -2,10 +2,11 @@
 // tried without a CO16. Same endpoints as src/web.cpp; the data comes from
 // tools/sim/sim.cpp running the real furnace model. No npm packages needed.
 //
-//   node tools/sim/server.mjs [--port 8080] [--speed 1] [--seed 1] [--all-sensors]
+//   node tools/sim/server.mjs [--port 8080] [--speed 1] [--seed 1] [--all-sensors] [--dirty-filter]
 //
 // --speed runs the simulated furnace faster than real time (up to 50x).
-// --all-sensors also fits the optional room, outdoor, spare and CO sensors, with made-up readings.
+// --all-sensors also fits the optional room, outdoor, spare, CO and pressure sensors, with made-up
+// readings. --dirty-filter, with --all-sensors, raises the filter pressure drop past the dirty limit.
 
 import { spawn, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -25,12 +26,14 @@ const port = Number(arg("port", 8080));
 const speed = Math.min(50, Math.max(1, Number(arg("speed", 1))));
 const seed = arg("seed", "1");
 const allSensors = process.argv.includes("--all-sensors");
+const dirtyFilter = process.argv.includes("--dirty-filter");
+let lastFilterDp = null;
 // Made-up readings for the optional sensors: a room near 21 °C, an outdoor day/night swing,
 // a basement probe and a trace of CO.
-// Made-up pressures: filter drop and TESP both follow the blower.
+// Made-up pressures: filter drop and TESP both follow the blower. --dirty-filter loads the filter up.
 const pressures = (s) => {
   const wob = (k) => Math.sin(s.time / 97 + k) * 2;
-  return { p1: (s.blower ? 30 + s.i_blower * 3 : 0) + wob(1), p2: (s.blower ? 125 + s.i_blower * 8 : 0) + wob(2),
+  return { p1: (s.blower ? (dirtyFilter ? 70 : 30) + s.i_blower * 3 : 0) + wob(1), p2: (s.blower ? 125 + s.i_blower * 8 : 0) + wob(2),
            p3: (s.blower ? 60 + s.i_blower * 2 : 0) + wob(3) };
 };
 const extras = (t) => ({
@@ -85,6 +88,10 @@ function absorb(s) {
                            spare_fitted: true, spare_name: "Basement", t_spare: x.spare, co_ppm_fitted: true, co_ppm: x.co,
                            ...pressures(s), p1_fitted: true, p2_fitted: true, p3_fitted: true, p1_name: "Filter pressure drop",
                            p2_name: "TESP", p3_name: "Pressure 3", press_unit: "inwc" });
+    // The firmware keeps the last minute average with the blower running; the latest reading will do here.
+    if (s.blower) lastFilterDp = state.p1;
+    Object.assign(state, { filter_press: 1, filter_dp: lastFilterDp, filter_dirty_pa: CONFIG.filterDirtyPa,
+                           filter_dirty: lastFilterDp != null && lastFilterDp >= CONFIG.filterDirtyPa });
   }
 }
 
@@ -121,6 +128,7 @@ const CONFIG = {
   aiOutdoor: 0, outdoorLowC: -40, outdoorHighC: 60, weatherOn: false, weatherLat: 0, weatherLon: 0, dashLayout: "", dashChart: "",
   aiPress1: 0, aiPress2: 0, aiPress3: 0, press1Name: "Filter pressure drop", press2Name: "TESP", press3Name: "Pressure 3",
   press1LowPa: 0, press1HighPa: 249.09, press2LowPa: 0, press2HighPa: 498.18, press3LowPa: 0, press3HighPa: 249.09, pressUnit: "inwc",
+  press1Type: "sdp810", press2Type: "sdp811", press3Type: "ai", filterPressSensor: 1, filterDirtyPa: 62.27,
   spareName: "Spare",
   model: { inducerOnAmps: 0.3, inducerHighAmps: 1.2, blowerOnAmps: 1, flameConfirmS: 5, ignitionTimeoutS: 90,
            shortCycleS: 180, blowerDelayS: 90, settleS: 300, minDeltaTC: 15, maxSupplyC: 85, minFlueRiseC: 10,

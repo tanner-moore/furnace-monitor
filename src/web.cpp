@@ -11,6 +11,7 @@
 #include "ha_mqtt.h"
 #include "monitor.h"
 #include "net.h"
+#include "sdp8xx.h"
 
 namespace web {
 
@@ -151,9 +152,10 @@ void begin() {
     cfg["aiCo"] = config.aiCo;
     cfg["aiRoom"] = config.aiRoom;
     cfg["aiOutdoor"] = config.aiOutdoor;
-    cfg["aiPress1"] = config.aiPress1;
-    cfg["aiPress2"] = config.aiPress2;
-    cfg["aiPress3"] = config.aiPress3;
+    // I2C pressure sensors don't use an analog input.
+    cfg["aiPress1"] = sdp8xx::addressFor(config.press1Type) ? 0 : config.aiPress1;
+    cfg["aiPress2"] = sdp8xx::addressFor(config.press2Type) ? 0 : config.aiPress2;
+    cfg["aiPress3"] = sdp8xx::addressFor(config.press3Type) ? 0 : config.aiPress3;
     cfg["inducerAmpsPerVolt"] = config.inducerAmpsPerVolt;
     cfg["blowerAmpsPerVolt"] = config.blowerAmpsPerVolt;
     cfg["ledOnVolts"] = config.ledOnVolts;
