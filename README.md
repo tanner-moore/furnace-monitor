@@ -77,7 +77,7 @@ With a card in the CO16's slot (FAT32), the board writes one-minute averages to 
 
 ## Live tab layout
 
-Press "Customize dashboard" under the Live tab to hide tiles, show hidden ones (such as the 6-hour temperature chart), and reorder them by dragging or with the arrow buttons. Saving needs the settings login. The layout is stored on the board, so every browser sees the same layout, and saving it doesn't restart the board. "Reset to default" goes back to the standard layout.
+Press "Customize dashboard" under the Live tab to hide tiles, show hidden ones (such as the 6-hour temperature chart), and reorder them by dragging or with the arrow buttons. While customizing, the chart widget also lets you pick its time span and which lines and shading it shows: any temperature, the rise, the motor currents, CO, and when the burner, high fire, blower or heat call was on. The History tab has the same line choices, remembered in each browser. Saving needs the settings login. The layout is stored on the board, so every browser sees the same layout, and saving it doesn't restart the board. "Reset to default" goes back to the standard layout.
 
 ## Bench tab
 

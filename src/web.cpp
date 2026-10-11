@@ -182,16 +182,18 @@ void begin() {
   server.on("/api/layout", HTTP_GET, [](AsyncWebServerRequest* req) {
     JsonDocument doc;
     doc["layout"] = config.dashLayout;
+    doc["chart"] = config.dashChart;
     sendJson(req, doc);
   });
   auto* layout = new AsyncCallbackJsonWebHandler("/api/layout", [](AsyncWebServerRequest* req, JsonVariant& body) {
     if (!authorized(req)) return;
-    const String l = body["layout"] | "";
-    if (l.length() > 600) {
+    const String l = body["layout"] | "", c = body["chart"] | "";
+    if (l.length() > 600 || c.length() > 200) {
       req->send(400, "text/plain", "layout too long");
       return;
     }
     config.dashLayout = l;
+    config.dashChart = c;
     const bool ok = config.save();
     req->send(ok ? 200 : 500, "text/plain", ok ? "layout saved" : "could not save layout");
   });

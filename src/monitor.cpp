@@ -30,6 +30,8 @@ static constexpr uint32_t kBenchHoldMs = 15000;
 struct Sample {
   uint32_t epoch;
   int16_t supply10, return10, flue10;  // 0.1 C, INT16_MIN = no reading
+  int16_t room10, outdoor10, spare10;  // 0.1 C, INT16_MIN = not fitted or no reading
+  int16_t co10;                        // 0.1 ppm, INT16_MIN = not fitted or no reading
   uint8_t inducerA10, blowerA10;       // 0.1 A, 255 = no reading
   uint8_t flags;                       // see kFlag*
   uint8_t phase;
@@ -154,8 +156,8 @@ static void saveTotals() {
 struct MinuteAcc {
   uint32_t minute = 0;  // epoch / 60
   int n = 0;
-  float sum[5];
-  int cnt[5];
+  float sum[9];
+  int cnt[9];
   uint8_t flags = 0, phase = 0;
 
   void add(float v, int i) {
@@ -168,7 +170,7 @@ struct MinuteAcc {
     minute = m;
     n = 0;
     flags = 0;
-    for (int i = 0; i < 5; i++) sum[i] = 0, cnt[i] = 0;
+    for (int i = 0; i < 9; i++) sum[i] = 0, cnt[i] = 0;
   }
 };
 
@@ -180,6 +182,10 @@ static Sample toSample(const sdlog::MinuteRow& r) {
   s.flue10 = pack10(r.flueC);
   s.inducerA10 = packAmps(r.inducerAmps);
   s.blowerA10 = packAmps(r.blowerAmps);
+  s.room10 = pack10(r.roomC);
+  s.outdoor10 = pack10(r.outdoorC);
+  s.spare10 = pack10(r.spareC);
+  s.co10 = pack10(r.coPpm);
   s.flags = r.flags;
   s.phase = r.phase;
   return s;
@@ -364,6 +370,12 @@ static void task(void*) {
       s.flue10 = pack10(in.flueC);
       s.inducerA10 = packAmps(in.inducerAmps);
       s.blowerA10 = packAmps(in.blowerAmps);
+      // Outdoor as shown on the dashboard: the sensor, or Open-Meteo when there is none.
+      const float outC = !isnan(outdoorC) ? outdoorC : weather::tempC();
+      s.room10 = pack10(roomC);
+      s.outdoor10 = pack10(outC);
+      s.spare10 = pack10(spare);
+      s.co10 = pack10(coPpm);
       s.flags = (in.w1 ? kFlagW1 : 0) | (in.w2 ? kFlagW2 : 0) | (in.g ? kFlagG : 0) | (in.mvl ? kFlagMvl : 0) |
                 (in.mvh ? kFlagMvh : 0) | (st.flame ? kFlagFlame : 0) | (st.blowerOn ? kFlagBlower : 0);
       s.phase = (uint8_t)st.phase;
@@ -381,6 +393,10 @@ static void task(void*) {
             r.flueC = acc.avg(2);
             r.inducerAmps = acc.avg(3);
             r.blowerAmps = acc.avg(4);
+            r.roomC = acc.avg(5);
+            r.outdoorC = acc.avg(6);
+            r.spareC = acc.avg(7);
+            r.coPpm = acc.avg(8);
             r.flags = acc.flags;
             r.phase = acc.phase;
             coarse.push(toSample(r));
@@ -394,6 +410,10 @@ static void task(void*) {
         acc.add(in.flueC, 2);
         acc.add(in.inducerAmps, 3);
         acc.add(in.blowerAmps, 4);
+        acc.add(roomC, 5);
+        acc.add(outC, 6);
+        acc.add(spare, 7);
+        acc.add(coPpm, 8);
         acc.flags |= s.flags;
         acc.phase = s.phase;
       }
@@ -622,6 +642,12 @@ void historyJson(uint32_t hrs, size_t maxPoints, JsonObject o) {
   JsonArray t = o["t"].to<JsonArray>(), sup = o["supply"].to<JsonArray>(), ret = o["return"].to<JsonArray>(),
             flue = o["flue"].to<JsonArray>(), ind = o["inducer"].to<JsonArray>(), blo = o["blower"].to<JsonArray>(),
             flags = o["flags"].to<JsonArray>();
+  // The optional sensors only when fitted, to keep the reply small.
+  const bool hasOut = config.aiOutdoor || config.weatherOn;
+  JsonArray room = config.aiRoom ? o["room"].to<JsonArray>() : JsonArray(),
+            outdoor = hasOut ? o["outdoor"].to<JsonArray>() : JsonArray(),
+            spare = config.rtdSpare ? o["spare"].to<JsonArray>() : JsonArray(),
+            co = config.aiCo ? o["co"].to<JsonArray>() : JsonArray();
   for (size_t i = want; i >= step; i -= step) {
     // Over a step of several samples, keep any flag seen (so short burns show).
     uint8_t f = 0;
@@ -636,6 +662,10 @@ void historyJson(uint32_t hrs, size_t maxPoints, JsonObject o) {
     add10(flue, s.flue10);
     if (s.inducerA10 == 255) ind.add(nullptr); else ind.add(s.inducerA10 / 10.0f);
     if (s.blowerA10 == 255) blo.add(nullptr); else blo.add(s.blowerA10 / 10.0f);
+    if (config.aiRoom) add10(room, s.room10);
+    if (hasOut) add10(outdoor, s.outdoor10);
+    if (config.rtdSpare) add10(spare, s.spare10);
+    if (config.aiCo) add10(co, s.co10);
     flags.add(f);
   }
   o["period_s"] = r.periodS * step;

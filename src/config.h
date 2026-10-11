@@ -64,6 +64,7 @@ struct Config {
   // Live tab layout from "Customize dashboard": widget names in order, hidden ones prefixed
   // with "-". Blank means the default layout.
   String dashLayout;
+  String dashChart;  // chart widget: "hours|line,line"; blank means 6 h of supply, return, flue and burner
 
   // Air filter: blower hours between changes.
   uint16_t filterLifeHours = 500;
