@@ -12,6 +12,7 @@
 #include "ha_mqtt.h"
 #include "monitor.h"
 #include "net.h"
+#include "weather.h"
 #include "web.h"
 
 void setup() {
@@ -28,6 +29,7 @@ void setup() {
   monitor::logEvent("boot");
 
   net::begin();
+  weather::begin();
   ha_mqtt::begin();
   web::begin();
   display::begin();

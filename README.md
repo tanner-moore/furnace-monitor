@@ -21,11 +21,14 @@ The full build plan (sensors, wiring, safety notes) is in the project's [build p
 | Supply / return / flue air | PT100, 3-wire | PT100 1 / 2 / 3 |
 | CO level (optional) | CO transmitter with a 0-10 V output, in ppm (default 25 ppm/V, alert at 35 ppm) | AI 4 (tick CO sensor on the General tab) |
 | Room temperature (optional) | Temperature transmitter with a 0-10 V output (default 0 to 50 °C) | AI 5 (tick Room temperature sensor on the General tab) |
+| Outdoor temperature (optional) | Temperature transmitter with a 0-10 V output, outdoor rated (default -40 to 60 °C) | AI 6 (tick Outdoor temperature sensor on the General tab) |
 | Spare probe (optional, renamable) | PT100, 3-wire | PT100 4 |
 
 Untick any sensor that isn't fitted on the Settings General tab. That saves its input as 0, which the firmware treats as not fitted, and greys out its settings on the other tabs. The CO sensor adds CO level and alerts to Home Assistant; it does not replace the CO alarms the house already needs.
 
 The CO16 has four PT100 channels, and supply, return and flue use three of them, so the room sensor goes on an analog input instead. Both transmitters need a 0-10 V output; if the CO16 has a range jumper for its analog inputs, set those inputs to 0-10 V.
+
+Outdoor temperature can also come from [Open-Meteo](https://open-meteo.com/), a free weather service that needs no account. Tick "Outdoor temperature from Open-Meteo" on the General tab and enter your latitude and longitude on the Network tab. The board fetches the current temperature every 15 minutes. When an outdoor sensor is also fitted, the sensor is used and Open-Meteo fills in if it fails. Both are off by default.
 
 ## What it tracks
 
@@ -89,6 +92,7 @@ The built-in ST7789 shows the phase, temperatures, any alert, today's cycles, fi
 - `src/sdlog.*`: SD card logging and reading it back at boot
 - `src/display.*`, `src/st7789.*`: the built-in screen and a small ST7789 driver
 - `src/ha_mqtt.*`, `src/web.*`, `src/net.*`: MQTT with discovery, web server, Ethernet / Wi-Fi / NTP
+- `src/weather.*`: outdoor temperature from Open-Meteo
 - `data/index.html`: the dashboard
 
 ## Not done yet

@@ -148,6 +148,9 @@ void begin() {
     cfg["aiInducer"] = config.aiInducer;
     cfg["aiBlower"] = config.aiBlower;
     cfg["aiLed"] = config.aiLed;
+    cfg["aiCo"] = config.aiCo;
+    cfg["aiRoom"] = config.aiRoom;
+    cfg["aiOutdoor"] = config.aiOutdoor;
     cfg["inducerAmpsPerVolt"] = config.inducerAmpsPerVolt;
     cfg["blowerAmpsPerVolt"] = config.blowerAmpsPerVolt;
     cfg["ledOnVolts"] = config.ledOnVolts;
