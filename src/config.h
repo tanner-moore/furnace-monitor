@@ -49,8 +49,10 @@ struct Config {
   // 0x25, "sdp811" at 0x26). aiPressN = 0 means not fitted; for I2C sensors any other value just
   // means fitted. Names show on the dashboard and in Home Assistant; low/high are what a 0-10 V
   // transmitter reads at 0 V and 10 V.
-  uint8_t aiPress1 = 0, aiPress2 = 0, aiPress3 = 0;
-  String press1Type = "sdp810", press2Type = "sdp811", press3Type = "ai";
+  // Filter pressure drop on AI 7 and TESP on AI 8 are fitted by default: the CO16 has no I2C
+  // socket or free GPIO for SDP sensors, so 0-10 V transmitters are the way to wire them.
+  uint8_t aiPress1 = 7, aiPress2 = 8, aiPress3 = 0;
+  String press1Type = "ai", press2Type = "ai", press3Type = "ai";
   String press1Name = "Filter pressure drop", press2Name = "TESP", press3Name = "Pressure 3";
   float press1LowPa = 0.0f, press1HighPa = 249.09f;     // 0 to 1 in. w.c.
   float press2LowPa = 0.0f, press2HighPa = 498.18f;     // 0 to 2 in. w.c.
