@@ -151,6 +151,9 @@ void begin() {
     cfg["aiCo"] = config.aiCo;
     cfg["aiRoom"] = config.aiRoom;
     cfg["aiOutdoor"] = config.aiOutdoor;
+    cfg["aiPress1"] = config.aiPress1;
+    cfg["aiPress2"] = config.aiPress2;
+    cfg["aiPress3"] = config.aiPress3;
     cfg["inducerAmpsPerVolt"] = config.inducerAmpsPerVolt;
     cfg["blowerAmpsPerVolt"] = config.blowerAmpsPerVolt;
     cfg["ledOnVolts"] = config.ledOnVolts;

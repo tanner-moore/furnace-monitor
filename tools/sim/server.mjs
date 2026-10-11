@@ -27,6 +27,12 @@ const seed = arg("seed", "1");
 const allSensors = process.argv.includes("--all-sensors");
 // Made-up readings for the optional sensors: a room near 21 °C, an outdoor day/night swing,
 // a basement probe and a trace of CO.
+// Made-up pressures: duct static follows the blower, draft follows the inducer.
+const pressures = (s) => {
+  const wob = (k) => Math.sin(s.time / 97 + k) * 3;
+  return { p1: (s.blower ? 115 + s.i_blower * 6 : 0) + wob(1), p2: (s.blower ? -85 - s.i_blower * 4 : 0) + wob(2),
+           p3: (s.inducer ? (s.inducer_high ? -330 : -210) : 0) + wob(3) };
+};
 const extras = (t) => ({
   room: 21 + 0.6 * Math.sin(t / 2700), outdoor: 6 + 5 * Math.sin(2 * Math.PI * (t / 86400 - 0.35)),
   spare: 15.5 + 0.4 * Math.sin(t / 5000), co: Math.max(0, 1.5 + Math.sin(t / 1800)),
@@ -67,7 +73,7 @@ function absorb(s) {
   }
   if (s.uptime_s % 5 === 0) {
     history.push({ t: s.time, supply: s.t_supply, return: s.t_return, flue: s.t_flue,
-                   inducer: s.i_inducer, blower: s.i_blower, flags: s.flags, ...extras(s.time) });
+                   inducer: s.i_inducer, blower: s.i_blower, flags: s.flags, ...extras(s.time), ...pressures(s) });
     if (history.length > HISTORY_S / 5) history.shift();
   }
   delete s.events;
@@ -76,7 +82,9 @@ function absorb(s) {
   if (allSensors) {
     const x = extras(s.time);
     Object.assign(state, { room_fitted: true, t_room: x.room, out_fitted: true, t_out: x.outdoor, out_src: "weather",
-                           spare_fitted: true, spare_name: "Basement", t_spare: x.spare, co_ppm_fitted: true, co_ppm: x.co });
+                           spare_fitted: true, spare_name: "Basement", t_spare: x.spare, co_ppm_fitted: true, co_ppm: x.co,
+                           ...pressures(s), p1_fitted: true, p2_fitted: true, p3_fitted: true, p1_name: "Supply static",
+                           p2_name: "Return static", p3_name: "Inducer draft", press_unit: "inwc" });
   }
 }
 
@@ -111,19 +119,22 @@ const CONFIG = {
   rtdSupply: 1, rtdReturn: 2, rtdFlue: 3, rtdSpare: 0, offsetSupply: 0, offsetReturn: 0, offsetFlue: 0, offsetSpare: 0,
   boardPreset: "generic", aiCo: 0, coPpmPerVolt: 25, coAlertPpm: 35, aiRoom: 0, roomLowC: 0, roomHighC: 50,
   aiOutdoor: 0, outdoorLowC: -40, outdoorHighC: 60, weatherOn: false, weatherLat: 0, weatherLon: 0, dashLayout: "", dashChart: "",
+  aiPress1: 0, aiPress2: 0, aiPress3: 0, press1Name: "Supply static", press2Name: "Return static", press3Name: "Inducer draft",
+  press1LowPa: 0, press1HighPa: 249.09, press2LowPa: -249.09, press2HighPa: 0, press3LowPa: -498.18, press3HighPa: 0, pressUnit: "inwc",
   spareName: "Spare",
   model: { inducerOnAmps: 0.3, inducerHighAmps: 1.2, blowerOnAmps: 1, flameConfirmS: 5, ignitionTimeoutS: 90,
            shortCycleS: 180, blowerDelayS: 90, settleS: 300, minDeltaTC: 15, maxSupplyC: 85, minFlueRiseC: 10,
            ignitionTrials: 2, riseSettleS: 180 },
 };
 
-if (allSensors) Object.assign(CONFIG, { aiRoom: 5, aiOutdoor: 6, weatherOn: true, rtdSpare: 4, aiCo: 4, spareName: "Basement" });
+if (allSensors) Object.assign(CONFIG, { aiRoom: 5, aiOutdoor: 6, weatherOn: true, rtdSpare: 4, aiCo: 4, spareName: "Basement",
+                                 aiPress1: 7, aiPress2: 8, aiPress3: 9 });
 
 function historyJson(hours) {
   const want = Math.min(hours * 720, history.length);
   const step = Math.max(1, Math.ceil(want / 720));
   const out = { t: [], supply: [], return: [], flue: [], inducer: [], blower: [], flags: [] };
-  if (allSensors) Object.assign(out, { room: [], outdoor: [], spare: [], co: [] });
+  if (allSensors) Object.assign(out, { room: [], outdoor: [], spare: [], co: [], p1: [], p2: [], p3: [] });
   for (let i = history.length - want; i < history.length; i += step) {
     for (const k of Object.keys(out)) out[k].push(history[i][k]);
   }

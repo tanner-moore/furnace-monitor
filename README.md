@@ -22,6 +22,7 @@ The full build plan (sensors, wiring, safety notes) is in the project's [build p
 | CO level (optional) | CO transmitter with a 0-10 V output, in ppm (default 25 ppm/V, alert at 35 ppm) | AI 4 (tick CO sensor on the General tab) |
 | Room temperature (optional) | Temperature transmitter with a 0-10 V output (default 0 to 50 °C) | AI 5 (tick Room temperature sensor on the General tab) |
 | Outdoor temperature (optional) | Temperature transmitter with a 0-10 V output, outdoor rated (default -40 to 60 °C) | AI 6 (tick Outdoor temperature sensor on the General tab) |
+| Pressures (optional, up to 3, renamable) | Differential pressure transmitters with a 0-10 V output, e.g. supply and return duct static and inducer draft (defaults 0 to 1, -1 to 0 and -2 to 0 in. w.c.) | AI 7, 8, 9 (tick Pressure sensor 1-3 on the General tab) |
 | Spare probe (optional, renamable) | PT100, 3-wire | PT100 4 |
 
 Untick any sensor that isn't fitted on the Settings General tab. That saves its input as 0, which the firmware treats as not fitted, and greys out its settings on the other tabs. The CO sensor adds CO level and alerts to Home Assistant; it does not replace the CO alarms the house already needs.
@@ -29,6 +30,8 @@ Untick any sensor that isn't fitted on the Settings General tab. That saves its 
 The CO16 has four PT100 channels, and supply, return and flue use three of them, so the room sensor goes on an analog input instead. Both transmitters need a 0-10 V output; if the CO16 has a range jumper for its analog inputs, set those inputs to 0-10 V.
 
 Outdoor temperature can also come from [Open-Meteo](https://open-meteo.com/), a free weather service that needs no account. Tick "Outdoor temperature from Open-Meteo" on the General tab and enter your latitude and longitude on the Network tab. The board fetches the current temperature every 15 minutes. When an outdoor sensor is also fitted, the sensor is used and Open-Meteo fills in if it fails. Both are off by default.
+
+Pressure sensors only read air pressure through a tube. For duct static, use a static-pressure tip in the duct. For inducer draft, tee into the inducer pressure-switch hose with a tight fitting: that hose is part of a safety circuit, and a leak there makes the pressure switch open and the furnace shut down. Gas pressure is deliberately not offered, because measuring it permanently means adding a fitting to the gas valve, and that is a job for a gas fitter, not a monitor.
 
 ## What it tracks
 
@@ -77,7 +80,7 @@ With a card in the CO16's slot (FAT32), the board writes one-minute averages to 
 
 ## Live tab layout
 
-Press "Customize dashboard" under the Live tab to hide tiles, show hidden ones (such as the 6-hour temperature chart), and reorder them by dragging or with the arrow buttons. While customizing, the chart widget also lets you pick its time span and which lines and shading it shows: any temperature, the rise, the motor currents, CO, and when the burner, high fire, blower or heat call was on. The History tab has the same line choices, remembered in each browser. Saving needs the settings login. The layout is stored on the board, so every browser sees the same layout, and saving it doesn't restart the board. "Reset to default" goes back to the standard layout.
+Press "Customize dashboard" under the Live tab to hide tiles, show hidden ones (such as the 6-hour temperature chart), and reorder them by dragging or with the arrow buttons. While customizing, the chart widget also lets you pick its time span and which lines and shading it shows: any temperature, the rise, the motor currents, CO, the pressures, and when the burner, high fire, blower or heat call was on. The History tab has the same line choices, remembered in each browser. Saving needs the settings login. The layout is stored on the board, so every browser sees the same layout, and saving it doesn't restart the board. "Reset to default" goes back to the standard layout.
 
 ## Bench tab
 

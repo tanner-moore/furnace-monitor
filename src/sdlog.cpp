@@ -88,7 +88,7 @@ static void write(const Item& it) {
       const MinuteRow& r = it.minute;
       dayPath(r.epoch, path, sizeof path);
       // Newer columns go at the end so older files still read back.
-      header = "time,supply_c,return_c,flue_c,inducer_a,blower_a,flags,phase,room_c,outdoor_c,spare_c,co_ppm\n";
+      header = "time,supply_c,return_c,flue_c,inducer_a,blower_a,flags,phase,room_c,outdoor_c,spare_c,co_ppm,p1_pa,p2_pa,p3_pa\n";
       line = String(r.epoch);
       putNum(line, r.supplyC, 1);
       putNum(line, r.returnC, 1);
@@ -100,6 +100,7 @@ static void write(const Item& it) {
       putNum(line, r.outdoorC, 1);
       putNum(line, r.spareC, 1);
       putNum(line, r.coPpm, 1);
+      for (int i = 0; i < 3; i++) putNum(line, r.pressPa[i], 1);
       line += '\n';
       break;
     }
@@ -238,8 +239,8 @@ void readMinutes(uint32_t sinceEpoch, void (*fn)(const MinuteRow&)) {
     char path[32];
     dayPath(noon, path, sizeof path);
     eachLine(path, 0, [&](char* line) {
-      char* f[12];
-      const int nf = split(line, f, 12);
+      char* f[15];
+      const int nf = split(line, f, 15);
       if (nf < 8) return;
       MinuteRow r;
       r.epoch = strtoul(f[0], nullptr, 10);
@@ -257,6 +258,8 @@ void readMinutes(uint32_t sinceEpoch, void (*fn)(const MinuteRow&)) {
         r.spareC = num(f[10]);
         r.coPpm = num(f[11]);
       }
+      if (nf >= 15)
+        for (int i = 0; i < 3; i++) r.pressPa[i] = num(f[12 + i]);
       fn(r);
     });
     day.tm_mday++;

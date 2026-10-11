@@ -9,14 +9,14 @@
     --bg: #f6f6f4; --card: #fff; --ink: #1d1d1b; --muted: #6b6b66; --line: #e2e2dc;
     --on: #c2410c; --on-bg: #fff1e8; --ok: #15803d; --bad: #b91c1c; --bad-bg: #fdecec;
     --supply: #c2410c; --return: #2563eb; --flue: #7c3aed;
-    --rise: #b45309; --room: #0d9488; --outdoor: #16a34a; --spare: #db2777; --inducer: #64748b; --blowerc: #0891b2; --co: #dc2626;
+    --rise: #b45309; --room: #0d9488; --outdoor: #16a34a; --spare: #db2777; --inducer: #64748b; --blowerc: #0891b2; --co: #dc2626; --p1: #9333ea; --p2: #0284c7; --p3: #65a30d;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #161615; --card: #1f1f1d; --ink: #ecece8; --muted: #9a9a93; --line: #33332f;
       --on: #fb923c; --on-bg: #3a2414; --ok: #4ade80; --bad: #f87171; --bad-bg: #3b1717;
       --supply: #fb923c; --return: #60a5fa; --flue: #a78bfa;
-      --rise: #fbbf24; --room: #2dd4bf; --outdoor: #4ade80; --spare: #f472b6; --inducer: #94a3b8; --blowerc: #22d3ee; --co: #f87171;
+      --rise: #fbbf24; --room: #2dd4bf; --outdoor: #4ade80; --spare: #f472b6; --inducer: #94a3b8; --blowerc: #22d3ee; --co: #f87171; --p1: #c084fc; --p2: #38bdf8; --p3: #a3e635;
     }
   }
   * { box-sizing: border-box; }
@@ -142,6 +142,9 @@
       <div class="card tile" data-w="room" data-name="Room" id="tile_room"><div class="label">Room</div><div class="value" id="t_room">–</div></div>
       <div class="card tile" data-w="outdoor" data-name="Outdoor" id="tile_out"><div class="label" id="out_label">Outdoor</div><div class="value" id="t_out">–</div></div>
       <div class="card tile" data-w="spare" data-name="Spare probe" id="tile_spare"><div class="label" id="spare_name">Spare</div><div class="value" id="t_spare">–</div></div>
+      <div class="card tile" data-w="press1" data-name="Pressure 1" id="tile_p1"><div class="label" id="p1_name">Pressure 1</div><div class="value" id="p1">–</div></div>
+      <div class="card tile" data-w="press2" data-name="Pressure 2" id="tile_p2"><div class="label" id="p2_name">Pressure 2</div><div class="value" id="p2">–</div></div>
+      <div class="card tile" data-w="press3" data-name="Pressure 3" id="tile_p3"><div class="label" id="p3_name">Pressure 3</div><div class="value" id="p3">–</div></div>
       <div class="card tile" data-w="co" data-name="Carbon monoxide" id="tile_co"><div class="label">Carbon monoxide</div><div class="value" id="co_ppm">–</div></div>
       <div class="card wide" data-w="lamps" data-name="Signals"><div class="lamps" id="lamps"></div></div>
       <div class="card tile" data-w="cycles_today" data-name="Cycles today"><div class="label">Cycles today</div><div class="value" id="cycles_today">–</div></div>
@@ -159,7 +162,7 @@
         </div>
         <div class="bar" id="filterBar"><i style="width:0"></i></div>
       </div>
-      <div class="card wide" data-w="chart" data-name="Temperature chart" data-hide>
+      <div class="card wide" data-w="chart" data-name="Chart" data-hide>
         <div class="row" style="margin-bottom:8px">
           <span class="note" id="dashChartTitle">Last 6 hours</span>
           <select id="dashChartHours" hidden style="width:auto">
@@ -280,14 +283,22 @@ const SERIES = [
   { k: "inducer", name: "Inducer current", color: "--inducer", unit: "A" },
   { k: "blower", name: "Blower current", color: "--blowerc", unit: "A" },
   { k: "co", name: "CO", color: "--co", unit: "ppm" },
+  { k: "p1", name: "Pressure 1", color: "--p1", unit: "press" },
+  { k: "p2", name: "Pressure 2", color: "--p2", unit: "press" },
+  { k: "p3", name: "Pressure 3", color: "--p3", unit: "press" },
   { k: "burner", name: "Burner on", color: "--on", band: 8 | 16 },
   { k: "highfire", name: "High fire", color: "--supply", band: 16 },
   { k: "fanrun", name: "Blower running", color: "--blowerc", band: 64 },
   { k: "call", name: "Heat call", color: "--return", band: 1 },
 ];
-const DEFAULT_SERIES = ["supply", "return", "flue", "burner"];
+const DEFAULT_SERIES = ["supply", "return", "burner"];
 let spareLabel = "Spare";
-const seriesName = (d) => d.k === "spare" ? spareLabel : d.name;
+// Pressures arrive in pascals and show in inches of water unless the board is set to Pa.
+let pressInwc = true, pressNames = { p1: "Pressure 1", p2: "Pressure 2", p3: "Pressure 3" };
+const PA_PER_INWC = 249.0889;
+const pressShown = (pa) => pa == null ? null : pressInwc ? pa / PA_PER_INWC : pa;
+const pressLabel = () => pressInwc ? "in. w.c." : "Pa";
+const seriesName = (d) => d.k === "spare" ? spareLabel : pressNames[d.k] || d.name;
 // Which series a history reply can draw: the optional sensors only when they're recorded.
 const available = (h) => SERIES.filter((d) => d.band || d.k === "rise" ? true : Array.isArray(h?.[d.k]) || !h);
 
@@ -313,6 +324,12 @@ function render(s) {
   $("spare_name").textContent = spareLabel = s.spare_name || "Spare";
   $("t_spare").innerHTML = fmt(temp(s.t_spare), tUnit);
   $("tile_co").classList.toggle("absent", !s.co_ppm_fitted);
+  if (s.press_unit) pressInwc = s.press_unit !== "Pa";
+  for (const k of ["p1", "p2", "p3"]) {
+    $(`tile_${k}`).classList.toggle("absent", !s[`${k}_fitted`]);
+    $(`${k}_name`).textContent = pressNames[k] = s[`${k}_name`] || pressNames[k];
+    $(k).innerHTML = fmt(pressShown(s[k]), pressLabel(), pressInwc ? 2 : 0);
+  }
   $("co_ppm").innerHTML = fmt(s.co_ppm, "ppm", 0);
   $("cycles_today").textContent = s.cycles_today;
   $("burner_min_today").innerHTML = fmt(s.burner_min_today, "min", 0);
@@ -519,7 +536,7 @@ async function drawHistory(c, hours, keys) {
   const L = temps.length ? 40 : 8, R = rightUnit ? 40 : 8;
   const n = h.t.length, x = (i) => L + (W - L - R) * i / Math.max(1, n - 1);
   const lanes = bands.filter((d) => d.k !== "burner"), laneH = 5, plotB = H - B - lanes.length * (laneH + 2);
-  const shown = (d, v) => d.unit ? v : d.diff ? rise(v) : temp(v);
+  const shown = (d, v) => d.unit === "press" ? pressShown(v) : d.unit ? v : d.diff ? rise(v) : temp(v);
   // A scale per unit, rounded to tidy steps.
   const scale = (ds, stepMin) => {
     const vals = ds.flatMap((d) => h[d.k].filter((v) => v !== null).map((v) => shown(d, v)));
@@ -529,7 +546,8 @@ async function drawHistory(c, hours, keys) {
     return { lo, hi, step, y: (v) => plotB - (plotB - 8) * (v - lo) / (hi - lo) };
   };
   const tScale = scale(temps, 5);
-  const uScales = Object.fromEntries([...new Set(others.map((d) => d.unit))].map((u) => [u, scale(others.filter((d) => d.unit === u), u === "A" ? 0.5 : 5)]));
+  const stepMin = { A: 0.5, ppm: 5, press: pressInwc ? 0.05 : 10 };
+  const uScales = Object.fromEntries([...new Set(others.map((d) => d.unit))].map((u) => [u, scale(others.filter((d) => d.unit === u), stepMin[u])]));
   // Burner shading behind everything, other signals as strips along the bottom.
   const bw = Math.max(1, x(1) - x(0));
   for (const d of bands) {
@@ -546,12 +564,12 @@ async function drawHistory(c, hours, keys) {
   if (grid) for (let v = grid.lo; v <= grid.hi + 1e-9; v += grid.step) {
     ctx.beginPath(); ctx.moveTo(L, grid.y(v)); ctx.lineTo(W - R, grid.y(v)); ctx.stroke();
   }
-  const label = (v, step) => Number(v.toFixed(step < 1 ? 1 : 0));
+  const label = (v, step) => Number(v.toFixed(step < 0.1 ? 2 : step < 1 ? 1 : 0));
   if (tScale) for (let v = tScale.lo; v <= tScale.hi + 1e-9; v += tScale.step) ctx.fillText(`${label(v, tScale.step)}${tUnit}`, 0, tScale.y(v) + 4);
   const rs = uScales[rightUnit];
   if (rs) {
     ctx.textAlign = "right";
-    for (let v = rs.lo; v <= rs.hi + 1e-9; v += rs.step) ctx.fillText(`${label(v, rs.step)} ${rightUnit}`, W, rs.y(v) + 4);
+    for (let v = rs.lo; v <= rs.hi + 1e-9; v += rs.step) ctx.fillText(`${label(v, rs.step)} ${rightUnit === "press" ? (pressInwc ? "in" : "Pa") : rightUnit}`, W, rs.y(v) + 4);
     ctx.textAlign = "left";
   }
   for (let i = 0; i < n; i += Math.ceil(n / 6)) {
@@ -641,7 +659,7 @@ async function loadCycles() {
 
 // Bench: raw readings, refreshed every second while the tab is open.
 const DI_NAMES = { diW1: "W1", diW2: "W2", diG: "G", diMvl: "MVL", diMvh: "MVH" };
-const AI_NAMES = { aiInducer: "Inducer CT", aiBlower: "Blower CT", aiLed: "LED sensor", aiCo: "CO sensor", aiRoom: "Room sensor", aiOutdoor: "Outdoor sensor" };
+const AI_NAMES = { aiInducer: "Inducer CT", aiBlower: "Blower CT", aiLed: "LED sensor", aiCo: "CO sensor", aiRoom: "Room sensor", aiOutdoor: "Outdoor sensor", aiPress1: "Pressure 1", aiPress2: "Pressure 2", aiPress3: "Pressure 3" };
 const RTD_NAMES = { rtdSupply: "Supply", rtdReturn: "Return", rtdFlue: "Flue", rtdSpare: "Spare" };
 const RTD_FAULTS = [[0x80, "RTD high"], [0x40, "RTD low"], [0x20, "REFIN high"], [0x10, "REFIN low"], [0x08, "RTDIN low"], [0x04, "over/under voltage"]];
 let lastBench = null;
@@ -743,6 +761,11 @@ const SETTINGS_TABS = [
       ["aiRoom", "Room temperature sensor", "0-10 V temperature transmitter", "sensor"],
       ["aiOutdoor", "Outdoor temperature sensor", "0-10 V temperature transmitter", "sensor"],
     ] },
+    { title: "Pressure sensors", note: "0-10 V differential pressure transmitters. Name them on the Wiring tab.", fields: [
+      ["aiPress1", "Pressure sensor 1", "", "sensor"],
+      ["aiPress2", "Pressure sensor 2", "", "sensor"],
+      ["aiPress3", "Pressure sensor 3", "", "sensor"],
+    ] },
     { title: "Online weather", fields: [
       ["weatherOn", "Outdoor temperature from Open-Meteo", "Free, no account. Used when there's no outdoor sensor or it fails. Set your location on the Network tab"],
     ] },
@@ -754,6 +777,7 @@ const SETTINGS_TABS = [
     ] },
     { title: "Display", fields: [
       ["tempUnit", "Temperature units", "For this page and the built-in screen", "units"],
+      ["pressUnit", "Pressure units", "For this page. Home Assistant gets pascals and converts", "punits"],
     ] },
     { title: "Screen and SD card", fields: [
       ["display", "Built-in screen"],
@@ -799,6 +823,14 @@ const SETTINGS_TABS = [
       ["aiRoom", "Room temperature sensor"],
       ["aiOutdoor", "Outdoor temperature sensor"],
     ] },
+    { title: "Pressure sensors", note: "CO16 analog input number, 1 to 16, and the name shown on the dashboard and in Home Assistant.", fields: [
+      ["aiPress1", "Pressure sensor 1"],
+      ["press1Name", "Pressure sensor 1 name"],
+      ["aiPress2", "Pressure sensor 2"],
+      ["press2Name", "Pressure sensor 2 name"],
+      ["aiPress3", "Pressure sensor 3"],
+      ["press3Name", "Pressure sensor 3 name"],
+    ] },
     { title: "Temperature probes", note: "PT100 channel, 1 to 4. Turn probes on or off on the General tab.", fields: [
       ["rtdSupply", "Supply air"],
       ["rtdReturn", "Return air"],
@@ -822,6 +854,14 @@ const SETTINGS_TABS = [
     { title: "Outdoor temperature sensor", note: "The temperatures the sensor's range runs between, from its label.", fields: [
       ["outdoorLowC", "Reads this at 0 V", "", "temp"],
       ["outdoorHighC", "Reads this at 10 V", "", "temp"],
+    ] },
+    { title: "Pressure sensors", note: "The pressures each sensor's range runs between, from its label. Below zero is suction.", fields: [
+      ["press1LowPa", "Sensor 1 reads this at 0 V", "", "press"],
+      ["press1HighPa", "Sensor 1 reads this at 10 V", "", "press"],
+      ["press2LowPa", "Sensor 2 reads this at 0 V", "", "press"],
+      ["press2HighPa", "Sensor 2 reads this at 10 V", "", "press"],
+      ["press3LowPa", "Sensor 3 reads this at 0 V", "", "press"],
+      ["press3HighPa", "Sensor 3 reads this at 10 V", "", "press"],
     ] },
     { title: "LED sensor", fields: [
       ["ledOnVolts", "LED counts as lit above", "Raise it if room light trips the sensor", "V"],
@@ -910,6 +950,9 @@ const SENSOR_FIELDS = {
   aiCo: { restore: 4, fields: ["coPpmPerVolt", "coAlertPpm"] },
   aiRoom: { restore: 5, fields: ["roomLowC", "roomHighC"] },
   aiOutdoor: { restore: 6, fields: ["outdoorLowC", "outdoorHighC"] },
+  aiPress1: { restore: 7, fields: ["press1Name", "press1LowPa", "press1HighPa"] },
+  aiPress2: { restore: 8, fields: ["press2Name", "press2LowPa", "press2HighPa"] },
+  aiPress3: { restore: 9, fields: ["press3Name", "press3LowPa", "press3HighPa"] },
   weatherOn: { bool: true, fields: ["weatherLat", "weatherLon"] },
   display: { bool: true, fields: ["displayWidth", "displayHeight", "displayRotation"] },
   sdLogging: { bool: true },
@@ -967,7 +1010,7 @@ function markField(el) {
   if (!btn) return;
   if (el.disabled) { el.classList.remove("changed"); btn.hidden = true; return; }
   const def = defaultFor(el.name), cur = fieldValue(el);
-  const tol = el.dataset.kind === "temp" || el.dataset.kind === "dtemp" ? 0.06 : 1e-9;
+  const tol = el.dataset.kind === "temp" || el.dataset.kind === "dtemp" ? 0.06 : el.dataset.kind === "press" ? 0.6 : 1e-9;
   const changed = def !== undefined && (typeof def === "number" ? !(Math.abs(cur - def) <= tol) : cur !== def);
   el.classList.toggle("changed", changed);
   btn.hidden = !changed;
@@ -983,8 +1026,10 @@ function applyPreset(id) {
 // The settings form keeps its own unit, so a live update can't switch it under unsaved edits.
 let settingsF = true;
 const settingsUnit = () => settingsF ? "°F" : "°C";
-const toShown = (kind, v) => !settingsF ? v : kind === "temp" ? Math.round((v * 9 / 5 + 32) * 10) / 10 : kind === "dtemp" ? Math.round(v * 9 / 5 * 10) / 10 : v;
-const fromShown = (kind, v) => !settingsF ? v : kind === "temp" ? (v - 32) * 5 / 9 : kind === "dtemp" ? v * 5 / 9 : v;
+let settingsInwc = true;
+const settingsPressUnit = () => settingsInwc ? "in. w.c." : "Pa";
+const toShown = (kind, v) => kind === "press" ? (settingsInwc ? Math.round(v / PA_PER_INWC * 1000) / 1000 : Math.round(v)) : !settingsF ? v : kind === "temp" ? Math.round((v * 9 / 5 + 32) * 10) / 10 : kind === "dtemp" ? Math.round(v * 9 / 5 * 10) / 10 : v;
+const fromShown = (kind, v) => kind === "press" ? (settingsInwc ? v * PA_PER_INWC : v) : !settingsF ? v : kind === "temp" ? (v - 32) * 5 / 9 : kind === "dtemp" ? v * 5 / 9 : v;
 let settingsTab = "general";
 function showSettingsTab(id) {
   settingsTab = id;
@@ -1000,6 +1045,7 @@ async function loadSettings() {
   }
   const cfg = await r.json();
   settingsF = cfg.tempUnit ? cfg.tempUnit === "F" : useF;
+  settingsInwc = cfg.pressUnit !== "Pa";
   settingsDefaults = d && d.ok ? await d.json() : {};
   const get = (k) => k.startsWith("model.") ? cfg.model?.[k.slice(6)] : cfg[k];
   const placed = new Set();
@@ -1013,12 +1059,15 @@ async function loadSettings() {
     const v = get(k);
     if (kind !== "secret" && v === undefined) return "";
     const isTemp = kind === "temp" || kind === "dtemp";
-    const unit = isTemp ? `<span class="tu">${settingsUnit()}</span>` : kind === "tz" || kind === "secret" || kind === "units" ? "" : kind;
+    const unit = isTemp ? `<span class="tu">${settingsUnit()}</span>` : kind === "press" ? `<span class="pu">${settingsPressUnit()}</span>`
+      : kind === "tz" || kind === "secret" || kind === "units" || kind === "punits" ? "" : kind;
     const name = `${attr(label)}${unit ? ` (${unit})` : ""}${hint ? `<span class="hint">${attr(hint)}</span>` : ""}`;
     if (kind === "secret") return `<label><span>${name}</span><input type="password" name="${k}" placeholder="unchanged" autocomplete="new-password"></label>`;
     let input;
     if (kind === "tz") input = tzSelect(v);
     else if (kind === "units") input = `<select name="${k}" data-def>${[["F", "°F (Fahrenheit)"], ["C", "°C (Celsius)"]]
+      .map(([u, n]) => `<option value="${u}" ${u === v ? "selected" : ""}>${n}</option>`).join("")}</select>`;
+    else if (kind === "punits") input = `<select name="${k}" data-def>${[["inwc", "Inches of water (in. w.c.)"], ["Pa", "Pascals (Pa)"]]
       .map(([u, n]) => `<option value="${u}" ${u === v ? "selected" : ""}>${n}</option>`).join("")}</select>`;
     else if (typeof v === "boolean") input = `<input type="checkbox" name="${k}" ${v ? "checked" : ""} data-bool="true" data-def>`;
     else {
@@ -1046,6 +1095,16 @@ async function loadSettings() {
     settingsF = unitSel.value === "F";
     temps.forEach((el, i) => { el.value = toShown(el.dataset.kind, c[i]); });
     document.querySelectorAll("#settingsForm .tu").forEach((u) => { u.textContent = settingsUnit(); });
+    markAll();
+  });
+  // Same for the pressure fields.
+  const pressSel = document.querySelector('select[name="pressUnit"]');
+  if (pressSel) pressSel.addEventListener("change", () => {
+    const ps = [...document.querySelectorAll('#settingsForm input[data-kind="press"]')];
+    const pa = ps.map((el) => fromShown("press", Number(el.value)));
+    settingsInwc = pressSel.value !== "Pa";
+    ps.forEach((el, i) => { el.value = toShown("press", pa[i]); });
+    document.querySelectorAll("#settingsForm .pu").forEach((u) => { u.textContent = settingsPressUnit(); });
     markAll();
   });
   document.querySelectorAll("#settingsForm [data-def]").forEach((el) => el.addEventListener(el.tagName === "SELECT" || el.dataset.bool ? "change" : "input", () => markField(el)));
