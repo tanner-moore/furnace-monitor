@@ -20,8 +20,13 @@ The full build plan (sensors, wiring, safety notes) is in the project's [build p
 | Control board LED | Light-to-voltage sensor over the 50A51 LED | AI 3 |
 | Supply / return / flue air | PT100, 3-wire | PT100 1 / 2 / 3 |
 | CO alarm (optional) | Relay contact of a CO alarm, e.g. System Sensor CO1224TR on 12/24 VDC | DI 3 (tick CO alarm contact on the General tab) |
+| CO level (optional) | CO transmitter with a 0-10 V output, in ppm (default 25 ppm/V, alert at 35 ppm) | AI 4 (tick CO sensor on the General tab) |
+| Room temperature (optional) | Temperature transmitter with a 0-10 V output (default 0 to 50 °C) | AI 5 (tick Room temperature sensor on the General tab) |
+| Spare probe (optional, renamable) | PT100, 3-wire | PT100 4 |
 
 Untick any sensor that isn't fitted on the Settings General tab. That saves its input as 0, which the firmware treats as not fitted, and greys out its settings on the other tabs. For the CO alarm, tick "CO alarm opens the contact" on the Wiring tab if its contact opens on alarm. It adds CO alerts to Home Assistant; it does not replace the CO alarms the house already needs.
+
+The CO16 has four PT100 channels, and supply, return and flue use three of them, so the room sensor goes on an analog input instead. Both transmitters need a 0-10 V output; if the CO16 has a range jumper for its analog inputs, set those inputs to 0-10 V.
 
 ## What it tracks
 

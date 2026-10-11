@@ -116,6 +116,9 @@
       <div class="card tile"><div class="label">Flue</div><div class="value" id="t_flue">–</div></div>
       <div class="card tile"><div class="label">Inducer</div><div class="value" id="i_inducer">–</div></div>
       <div class="card tile"><div class="label">Blower</div><div class="value" id="i_blower">–</div></div>
+      <div class="card tile" id="tile_room" hidden><div class="label">Room</div><div class="value" id="t_room">–</div></div>
+      <div class="card tile" id="tile_spare" hidden><div class="label" id="spare_name">Spare</div><div class="value" id="t_spare">–</div></div>
+      <div class="card tile" id="tile_co" hidden><div class="label">Carbon monoxide</div><div class="value" id="co_ppm">–</div></div>
     </div>
     <div class="card">
       <div class="lamps" id="lamps"></div>
@@ -238,6 +241,13 @@ function render(s) {
   $("t_flue").innerHTML = fmt(temp(s.t_flue), tUnit, 0);
   $("i_inducer").innerHTML = fmt(s.i_inducer, "A", 2);
   $("i_blower").innerHTML = fmt(s.i_blower, "A", 1);
+  $("tile_room").hidden = !s.room_fitted;
+  $("t_room").innerHTML = fmt(temp(s.t_room), tUnit);
+  $("tile_spare").hidden = !s.spare_fitted;
+  $("spare_name").textContent = s.spare_name || "Spare";
+  $("t_spare").innerHTML = fmt(temp(s.t_spare), tUnit);
+  $("tile_co").hidden = !s.co_ppm_fitted;
+  $("co_ppm").innerHTML = fmt(s.co_ppm, "ppm", 0);
   $("cycles_today").textContent = s.cycles_today;
   $("burner_min_today").innerHTML = fmt(s.burner_min_today, "min", 0);
   $("high_fire_min_today").innerHTML = fmt(s.high_fire_min_today, "min", 0);
@@ -461,16 +471,18 @@ const SETTINGS_TABS = [
       ["diMvh", "Gas valve, high fire (MVH)", "", "sensor"],
       ["diCo", "CO alarm contact", "", "sensor"],
     ] },
-    { title: "Current sensors and LED", fields: [
+    { title: "Analog sensors", fields: [
       ["aiInducer", "Inducer current sensor", "", "sensor"],
       ["aiBlower", "Blower current sensor", "", "sensor"],
       ["aiLed", "Control board LED sensor", "Reads the board's flash codes", "sensor"],
+      ["aiCo", "CO sensor", "0-10 V CO transmitter that reads in ppm", "sensor"],
+      ["aiRoom", "Room temperature sensor", "0-10 V temperature transmitter", "sensor"],
     ] },
     { title: "Temperature probes", fields: [
       ["rtdSupply", "Supply air", "", "sensor"],
       ["rtdReturn", "Return air", "", "sensor"],
       ["rtdFlue", "Flue pipe", "", "sensor"],
-      ["rtdSpare", "Spare", "", "sensor"],
+      ["rtdSpare", "Spare probe", "Name it on the Wiring tab", "sensor"],
     ] },
     { title: "Screen and SD card", fields: [
       ["display", "Built-in screen"],
@@ -510,18 +522,28 @@ const SETTINGS_TABS = [
       ["aiInducer", "Inducer current sensor"],
       ["aiBlower", "Blower current sensor"],
       ["aiLed", "Control board LED sensor"],
+      ["aiCo", "CO sensor"],
+      ["aiRoom", "Room temperature sensor"],
     ] },
     { title: "Temperature probes", note: "PT100 channel, 1 to 4. Turn probes on or off on the General tab.", fields: [
       ["rtdSupply", "Supply air"],
       ["rtdReturn", "Return air"],
       ["rtdFlue", "Flue pipe"],
       ["rtdSpare", "Spare"],
+      ["spareName", "Spare probe name", "Shown on the dashboard and in Home Assistant"],
     ] },
   ] },
   { id: "calibration", name: "Calibration", sections: [
     { title: "Current sensors", note: "Amps per volt is the sensor's full-scale amps divided by 10 for a 0-10 V output.", fields: [
       ["inducerAmpsPerVolt", "Inducer sensor", "A 0-5 A sensor is 0.5", "A/V"],
       ["blowerAmpsPerVolt", "Blower sensor", "A 0-20 A sensor is 2", "A/V"],
+    ] },
+    { title: "CO sensor", fields: [
+      ["coPpmPerVolt", "CO sensor", "A 0-250 ppm sensor with a 0-10 V output is 25", "ppm/V"],
+    ] },
+    { title: "Room temperature sensor", note: "The temperatures the sensor's range runs between, from its label.", fields: [
+      ["roomLowC", "Reads this at 0 V", "", "temp"],
+      ["roomHighC", "Reads this at 10 V", "", "temp"],
     ] },
     { title: "LED sensor", fields: [
       ["ledOnVolts", "LED counts as lit above", "Raise it if room light trips the sensor", "V"],
@@ -555,6 +577,9 @@ const SETTINGS_TABS = [
       ["model.minDeltaTC", "Low temperature rise below", "Supply minus return", "dtemp"],
       ["model.maxSupplyC", "Supply air too hot above", "", "temp"],
       ["model.minFlueRiseC", "Flue should warm up by at least", "", "dtemp"],
+    ] },
+    { title: "Carbon monoxide", note: "From the CO sensor. The alarm contact on the Wiring tab alerts on its own.", fields: [
+      ["coAlertPpm", "CO alert at or above", "Household CO alarms sound at 70 ppm after an hour or more", "ppm"],
     ] },
     { title: "Air filter", fields: [
       ["filterLifeHours", "Change the filter every", "Counted in blower running hours", "h"],
@@ -605,7 +630,9 @@ const SENSOR_FIELDS = {
   rtdSupply: { fields: ["offsetSupply", "model.maxSupplyC", "model.minDeltaTC", "model.riseSettleS"] },
   rtdReturn: { fields: ["offsetReturn", "model.minDeltaTC", "model.riseSettleS"] },
   rtdFlue: { fields: ["offsetFlue", "model.minFlueRiseC"] },
-  rtdSpare: { restore: 4, fields: ["offsetSpare"] },
+  rtdSpare: { restore: 4, fields: ["offsetSpare", "spareName"] },
+  aiCo: { restore: 4, fields: ["coPpmPerVolt", "coAlertPpm"] },
+  aiRoom: { restore: 5, fields: ["roomLowC", "roomHighC"] },
   display: { bool: true, fields: ["displayFahrenheit", "displayWidth", "displayHeight", "displayRotation"] },
   sdLogging: { bool: true },
 };

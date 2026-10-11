@@ -15,6 +15,8 @@ struct Snapshot {
   furnace::Inputs in;
   furnace::State st;
   float spareC = NAN;
+  float roomC = NAN;  // room temperature transmitter
+  float coPpm = NAN;  // CO transmitter
   float ledVolts = NAN;
   uint16_t rawInputs = 0;  // DI1 = bit 0
   bool inputsOk = false;
