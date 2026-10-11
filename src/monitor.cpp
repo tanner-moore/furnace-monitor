@@ -10,6 +10,7 @@
 #include "flash_decoder.h"
 #include "rtc_ds3231.h"
 #include "sdlog.h"
+#include "weather.h"
 
 namespace monitor {
 
@@ -192,7 +193,7 @@ static bool rtdUsed(uint8_t ch) {
 
 static void task(void*) {
   furnace::Inputs in;
-  float spare = NAN, ledV = NAN, roomC = NAN, coPpm = NAN;
+  float spare = NAN, ledV = NAN, roomC = NAN, outdoorC = NAN, coPpm = NAN;
   uint16_t raw = 0;
   bool inputsOk = false;
   uint8_t rtdStep = 0, benchAi = 0;
@@ -239,6 +240,9 @@ static void task(void*) {
       roomC = config.aiRoom
                   ? config.roomLowC + co16::readAnalogVolts(config.aiRoom) / 10.0f * (config.roomHighC - config.roomLowC)
                   : NAN;
+      outdoorC = config.aiOutdoor ? config.outdoorLowC + co16::readAnalogVolts(config.aiOutdoor) / 10.0f *
+                                                             (config.outdoorHighC - config.outdoorLowC)
+                                  : NAN;
     }
 
     // Bench mode: one more analog input per pass, all 16 in under a second.
@@ -274,7 +278,7 @@ static void task(void*) {
     in.sensorFault = !inputsOk || (config.rtdSupply && isnan(in.supplyC)) || (config.rtdReturn && isnan(in.returnC)) ||
                      (config.rtdFlue && isnan(in.flueC)) || (config.aiInducer && isnan(in.inducerAmps)) ||
                      (config.aiBlower && isnan(in.blowerAmps)) || (config.aiCo && isnan(coPpm)) ||
-                     (config.aiRoom && isnan(roomC));
+                     (config.aiRoom && isnan(roomC)) || (config.aiOutdoor && isnan(outdoorC));
 
     const time_t epoch = nowEpoch();
     xSemaphoreTake(lock, portMAX_DELAY);
@@ -335,6 +339,7 @@ static void task(void*) {
     snap.st = st;
     snap.spareC = spare;
     snap.roomC = roomC;
+    snap.outdoorC = outdoorC;
     snap.coPpm = coPpm;
     snap.ledVolts = ledV;
     snap.rawInputs = raw;
@@ -501,11 +506,17 @@ void stateJson(const Snapshot& s, JsonObject o) {
   putNum(o, "t_flue", s.in.flueC);
   putNum(o, "t_spare", s.spareC);
   putNum(o, "t_room", s.roomC);
+  // Outdoor: the wired sensor when it has a reading, otherwise Open-Meteo.
+  const float weatherC = weather::tempC();
+  const bool fromSensor = !isnan(s.outdoorC);
+  putNum(o, "t_out", fromSensor ? s.outdoorC : weatherC);
+  o["out_src"] = fromSensor ? "sensor" : !isnan(weatherC) ? "weather" : "";
   putNum(o, "co_ppm", s.coPpm, 0);
   o["spare_name"] = config.spareName;
   o["temp_unit"] = config.tempUnit == "C" ? "C" : "F";
   o["spare_fitted"] = config.rtdSpare != 0;
   o["room_fitted"] = config.aiRoom != 0;
+  o["out_fitted"] = config.aiOutdoor != 0 || config.weatherOn;
   o["co_ppm_fitted"] = config.aiCo != 0;
   putNum(o, "i_inducer", s.in.inducerAmps, 2);
   putNum(o, "i_blower", s.in.blowerAmps, 2);

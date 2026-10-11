@@ -41,6 +41,12 @@ struct Config {
   float coAlertPpm = 35.0f;         // CO alert at or above this level
   uint8_t aiRoom = 0;               // room temperature sensor (AI 5 suggested)
   float roomLowC = 0.0f, roomHighC = 50.0f;  // what the room sensor reads at 0 V and at 10 V
+  uint8_t aiOutdoor = 0;            // outdoor temperature sensor (AI 6 suggested)
+  float outdoorLowC = -40.0f, outdoorHighC = 60.0f;  // what the outdoor sensor reads at 0 V and at 10 V
+
+  // Outdoor temperature from Open-Meteo, used when no outdoor sensor is wired or it fails.
+  bool weatherOn = false;
+  float weatherLat = 0.0f, weatherLon = 0.0f;  // decimal degrees; west and south are negative
 
   // PT100 channels (1-4, 0 = not fitted) and calibration offsets
   uint8_t rtdSupply = 1, rtdReturn = 2, rtdFlue = 3, rtdSpare = 0;

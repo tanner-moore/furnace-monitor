@@ -122,6 +122,8 @@ static void publishDiscovery() {
   if (config.aiCo) binary(cmps, "co_alarm", "Carbon monoxide", "carbon_monoxide");
   if (config.aiCo) sensor(cmps, "co_ppm", "Carbon monoxide level", "ppm", "carbon_monoxide", "measurement");
   if (config.aiRoom) sensor(cmps, "t_room", "Room temperature", "°C", "temperature", "measurement");
+  if (config.aiOutdoor || config.weatherOn)
+    sensor(cmps, "t_out", "Outdoor temperature", "°C", "temperature", "measurement");
   if (config.rtdSpare) {
     static String spareTitle;
     spareTitle = config.spareName + " temperature";

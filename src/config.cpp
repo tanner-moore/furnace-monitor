@@ -19,7 +19,9 @@ static const char* kPath = "/config.json";
   X(rtdSupply) X(rtdReturn) X(rtdFlue) X(rtdSpare)         \
   X(offsetSupply) X(offsetReturn) X(offsetFlue) X(offsetSpare) \
   X(boardPreset) X(aiCo) X(coPpmPerVolt) X(coAlertPpm) X(aiRoom) \
-  X(roomLowC) X(roomHighC) X(spareName) X(tempUnit)
+  X(roomLowC) X(roomHighC) X(spareName) X(tempUnit)        \
+  X(aiOutdoor) X(outdoorLowC) X(outdoorHighC) X(weatherOn) \
+  X(weatherLat) X(weatherLon)
 
 #define SECRET_FIELDS(X) X(wifiPass) X(mqttPass) X(webPass)
 

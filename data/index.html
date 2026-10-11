@@ -117,6 +117,7 @@
       <div class="card tile"><div class="label">Inducer</div><div class="value" id="i_inducer">–</div></div>
       <div class="card tile"><div class="label">Blower</div><div class="value" id="i_blower">–</div></div>
       <div class="card tile" id="tile_room" hidden><div class="label">Room</div><div class="value" id="t_room">–</div></div>
+      <div class="card tile" id="tile_out" hidden><div class="label" id="out_label">Outdoor</div><div class="value" id="t_out">–</div></div>
       <div class="card tile" id="tile_spare" hidden><div class="label" id="spare_name">Spare</div><div class="value" id="t_spare">–</div></div>
       <div class="card tile" id="tile_co" hidden><div class="label">Carbon monoxide</div><div class="value" id="co_ppm">–</div></div>
     </div>
@@ -247,6 +248,9 @@ function render(s) {
   $("i_blower").innerHTML = fmt(s.i_blower, "A", 1);
   $("tile_room").hidden = !s.room_fitted;
   $("t_room").innerHTML = fmt(temp(s.t_room), tUnit);
+  $("tile_out").hidden = !s.out_fitted;
+  $("out_label").textContent = s.out_src === "weather" ? "Outdoor (Open-Meteo)" : "Outdoor";
+  $("t_out").innerHTML = fmt(temp(s.t_out), tUnit);
   $("tile_spare").hidden = !s.spare_fitted;
   $("spare_name").textContent = s.spare_name || "Spare";
   $("t_spare").innerHTML = fmt(temp(s.t_spare), tUnit);
@@ -380,7 +384,7 @@ async function loadCycles() {
 
 // Bench: raw readings, refreshed every second while the tab is open.
 const DI_NAMES = { diW1: "W1", diW2: "W2", diG: "G", diMvl: "MVL", diMvh: "MVH" };
-const AI_NAMES = { aiInducer: "Inducer CT", aiBlower: "Blower CT", aiLed: "LED sensor" };
+const AI_NAMES = { aiInducer: "Inducer CT", aiBlower: "Blower CT", aiLed: "LED sensor", aiCo: "CO sensor", aiRoom: "Room sensor", aiOutdoor: "Outdoor sensor" };
 const RTD_NAMES = { rtdSupply: "Supply", rtdReturn: "Return", rtdFlue: "Flue", rtdSpare: "Spare" };
 const RTD_FAULTS = [[0x80, "RTD high"], [0x40, "RTD low"], [0x20, "REFIN high"], [0x10, "REFIN low"], [0x08, "RTDIN low"], [0x04, "over/under voltage"]];
 let lastBench = null;
@@ -480,6 +484,10 @@ const SETTINGS_TABS = [
       ["aiLed", "Control board LED sensor", "Reads the board's flash codes", "sensor"],
       ["aiCo", "CO sensor", "0-10 V CO transmitter that reads in ppm", "sensor"],
       ["aiRoom", "Room temperature sensor", "0-10 V temperature transmitter", "sensor"],
+      ["aiOutdoor", "Outdoor temperature sensor", "0-10 V temperature transmitter", "sensor"],
+    ] },
+    { title: "Online weather", fields: [
+      ["weatherOn", "Outdoor temperature from Open-Meteo", "Free, no account. Used when there's no outdoor sensor or it fails. Set your location on the Network tab"],
     ] },
     { title: "Temperature probes", fields: [
       ["rtdSupply", "Supply air", "", "sensor"],
@@ -502,6 +510,10 @@ const SETTINGS_TABS = [
       ["ntpServer", "Time server"],
       ["wifiSsid", "Wi-Fi network", "Backup for when Ethernet has no link. Leave blank for Ethernet only"],
       ["wifiPass", "Wi-Fi password", "Leave blank to keep the saved one", "secret"],
+    ] },
+    { title: "Location for Open-Meteo", note: "Decimal degrees from any map app. North and east are positive, south and west negative.", fields: [
+      ["weatherLat", "Latitude", "For example 47.6062", "°"],
+      ["weatherLon", "Longitude", "For example -122.3321", "°"],
     ] },
   ] },
   { id: "mqtt", name: "Home Assistant", sections: [
@@ -528,6 +540,7 @@ const SETTINGS_TABS = [
       ["aiLed", "Control board LED sensor"],
       ["aiCo", "CO sensor"],
       ["aiRoom", "Room temperature sensor"],
+      ["aiOutdoor", "Outdoor temperature sensor"],
     ] },
     { title: "Temperature probes", note: "PT100 channel, 1 to 4. Turn probes on or off on the General tab.", fields: [
       ["rtdSupply", "Supply air"],
@@ -548,6 +561,10 @@ const SETTINGS_TABS = [
     { title: "Room temperature sensor", note: "The temperatures the sensor's range runs between, from its label.", fields: [
       ["roomLowC", "Reads this at 0 V", "", "temp"],
       ["roomHighC", "Reads this at 10 V", "", "temp"],
+    ] },
+    { title: "Outdoor temperature sensor", note: "The temperatures the sensor's range runs between, from its label.", fields: [
+      ["outdoorLowC", "Reads this at 0 V", "", "temp"],
+      ["outdoorHighC", "Reads this at 10 V", "", "temp"],
     ] },
     { title: "LED sensor", fields: [
       ["ledOnVolts", "LED counts as lit above", "Raise it if room light trips the sensor", "V"],
@@ -635,6 +652,8 @@ const SENSOR_FIELDS = {
   rtdSpare: { restore: 4, fields: ["offsetSpare", "spareName"] },
   aiCo: { restore: 4, fields: ["coPpmPerVolt", "coAlertPpm"] },
   aiRoom: { restore: 5, fields: ["roomLowC", "roomHighC"] },
+  aiOutdoor: { restore: 6, fields: ["outdoorLowC", "outdoorHighC"] },
+  weatherOn: { bool: true, fields: ["weatherLat", "weatherLon"] },
   display: { bool: true, fields: ["displayWidth", "displayHeight", "displayRotation"] },
   sdLogging: { bool: true },
 };

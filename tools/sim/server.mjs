@@ -97,6 +97,7 @@ const CONFIG = {
   aiInducer: 1, aiBlower: 2, aiLed: 3, inducerAmpsPerVolt: 0.5, blowerAmpsPerVolt: 2, ledOnVolts: 2,
   rtdSupply: 1, rtdReturn: 2, rtdFlue: 3, rtdSpare: 0, offsetSupply: 0, offsetReturn: 0, offsetFlue: 0, offsetSpare: 0,
   boardPreset: "generic", aiCo: 0, coPpmPerVolt: 25, coAlertPpm: 35, aiRoom: 0, roomLowC: 0, roomHighC: 50,
+  aiOutdoor: 0, outdoorLowC: -40, outdoorHighC: 60, weatherOn: false, weatherLat: 0, weatherLon: 0,
   spareName: "Spare",
   model: { inducerOnAmps: 0.3, inducerHighAmps: 1.2, blowerOnAmps: 1, flameConfirmS: 5, ignitionTimeoutS: 90,
            shortCycleS: 180, blowerDelayS: 90, settleS: 300, minDeltaTC: 15, maxSupplyC: 85, minFlueRiseC: 10,
