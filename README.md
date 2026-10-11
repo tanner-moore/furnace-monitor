@@ -74,7 +74,7 @@ For first power-up and calibration: all 16 digital inputs, all 16 analog input v
 
 ## Screen
 
-The built-in ST7789 shows the phase, temperatures, any alert, today's cycles, filter life and the board's address. The panel size is a first guess (`displayWidth`/`displayHeight` 240 x 240, `displayRotation`); adjust on the Settings Screen and SD card tab if the picture is offset or cut off.
+The built-in ST7789 shows the phase, temperatures, any alert, today's cycles, filter life and the board's address. The panel size is a first guess (`displayWidth`/`displayHeight` 240 x 240, `displayRotation`); adjust on the Settings Screen tab if the picture is offset or cut off.
 
 ## Layout
 
