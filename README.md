@@ -22,7 +22,7 @@ The full build plan (sensors, wiring, safety notes) is in the project's [build p
 | CO level (optional) | CO transmitter with a 0-10 V output, in ppm (default 25 ppm/V, alert at 35 ppm) | AI 4 (tick CO sensor on the General tab) |
 | Room temperature (optional) | Temperature transmitter with a 0-10 V output (default 0 to 50 °C) | AI 5 (tick Room temperature sensor on the General tab) |
 | Outdoor temperature (optional) | Temperature transmitter with a 0-10 V output, outdoor rated (default -40 to 60 °C) | AI 6 (tick Outdoor temperature sensor on the General tab) |
-| Pressures (optional, up to 3, renamable) | Differential pressure sensors: Sensirion SDP810 or SDP811 on I2C, or 0-10 V transmitters. Set up by default as filter pressure drop (SDP810), total external static pressure, TESP (SDP811), and a spare 0-10 V transmitter | I2C bus, or AI 7, 8, 9 (tick Pressure sensor 1-3 on the General tab) |
+| Pressures (up to 3, renamable) | Differential pressure transmitters with a 0-10 V output. On by default: filter pressure drop (0 to 1 in. w.c.) and total external static pressure, TESP (0 to 2 in. w.c.). A third is optional | AI 7, 8, 9 (switch them on or off on the General tab) |
 | Spare probe (optional, renamable) | PT100, 3-wire | PT100 4 |
 
 Untick any sensor that isn't fitted on the Settings General tab. That saves its input as 0, which the firmware treats as not fitted, and greys out its settings on the other tabs. The CO sensor adds CO level and alerts to Home Assistant; it does not replace the CO alarms the house already needs.
@@ -33,7 +33,7 @@ Outdoor temperature can also come from [Open-Meteo](https://open-meteo.com/), a 
 
 Pressure sensors only read air pressure through tubes to static-pressure tips in the ductwork. For filter pressure drop, put one tip in the return just before the filter (high port) and one just after it (low port). For TESP, put one tip in the supply plenum just above the furnace, before any cooling coil (high port), and one in the return between the filter and the furnace (low port). Nothing connects to the furnace's own pressure-switch hoses.
 
-The Sensirion SDP810 (I2C address 0x25) and SDP811 (0x26) share the CO16's I2C bus (SDA GPIO 8, SCL GPIO 18) with its own chips, which use other addresses; power them from 3.3 V. The two addresses are why the defaults pair one of each: two SDP810s can't share the bus. Keep the I2C wires short, with the sensor near the board and the tubes run to the ductwork. These sensors let a tiny airflow through, so very long or thin tubing makes them read slightly low. The firmware runs them in continuous mode and averages everything since the last read, once a second. 0-10 V transmitters are still supported for anything else. Gas pressure is deliberately not offered, because measuring it permanently means adding a fitting to the gas valve, and that is a job for a gas fitter, not a monitor.
+The CO16 has no I2C socket and no free GPIO (KinCony confirmed this on its forum), so digital sensors such as the Sensirion SDP8xx can't be fitted; use 0-10 V transmitters. Gas pressure is deliberately not offered, because measuring it permanently means adding a fitting to the gas valve, and that is a job for a gas fitter, not a monitor.
 
 ## What it tracks
 
