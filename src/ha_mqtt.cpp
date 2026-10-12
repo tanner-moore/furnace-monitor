@@ -38,7 +38,9 @@ static JsonObject component(JsonObject cmps, const char* key, const char* platfo
 
 static void binary(JsonObject cmps, const char* key, const char* name, const char* devClass) {
   JsonObject c = component(cmps, key, "binary_sensor", name);
-  c["val_tpl"] = String("{{ 'ON' if value_json.") + key + " else 'OFF' }}";
+  // null in the state means the reading behind it is lost; "None" makes the entity unknown.
+  c["val_tpl"] = String("{{ 'None' if value_json.") + key + " is none else ('ON' if value_json." + key +
+                 " else 'OFF') }}";
   if (devClass) c["dev_cla"] = devClass;
 }
 
@@ -180,6 +182,8 @@ static void publishDiscovery() {
   sd["val_tpl"] = "{{ 'ON' if value_json.sd else 'OFF' }}";
   sd["dev_cla"] = "running";
   sd["ent_cat"] = "diagnostic";
+  JsonObject sdLost = sensor(cmps, "sd_lost", "SD rows lost", nullptr, nullptr, "total_increasing");
+  sdLost["ent_cat"] = "diagnostic";
 
   String payload;
   serializeJson(doc, payload);

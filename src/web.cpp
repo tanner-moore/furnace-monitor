@@ -212,6 +212,11 @@ void begin() {
     // it at the same time, and changing its strings under that task is not safe.
     Config next = config;
     next.fromJson(body.as<JsonObjectConst>());
+    String why;
+    if (!next.validate(why)) {
+      req->send(400, "text/plain", "Not saved. " + why);
+      return;
+    }
     if (!next.save()) {
       req->send(500, "text/plain", "could not save settings");
       return;

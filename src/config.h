@@ -102,6 +102,9 @@ struct Config {
   bool save() const;
   void toJson(JsonObject o, bool includeSecrets) const;
   void fromJson(JsonObjectConst o);
+  // Checks a candidate from the settings page: channel numbers in range, no input used twice,
+  // usable scaling. On failure, `why` says what to fix.
+  bool validate(String& why) const;
 };
 
 extern Config config;

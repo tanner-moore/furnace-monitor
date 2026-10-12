@@ -49,6 +49,8 @@
   .lamps { display: flex; flex-wrap: wrap; gap: 8px; }
   .lamp { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); font-size: 13px; color: var(--muted); }
   .lamp.on { color: var(--on); border-color: var(--on); background: var(--on-bg); }
+  .lamp.unk { border-style: dashed; }
+  .lamp.unk::after { content: " ?"; }
   canvas { width: 100%; height: 260px; display: block; }
   .legend { display: flex; gap: 16px; font-size: 13px; color: var(--muted); margin-top: 8px; flex-wrap: wrap; }
   .legend i { display: inline-block; width: 12px; height: 3px; vertical-align: middle; margin-right: 6px; }
@@ -348,7 +350,10 @@ $("lamps").innerHTML = LAMPS.map(([k, n]) => `<span class="lamp" data-l="${k}">$
 function render(s) {
   if (s.temp_unit) setUnits(s.temp_unit === "F");
   document.querySelectorAll("[data-p]").forEach((el) => el.classList.toggle("on", el.dataset.p === s.phase));
-  document.querySelectorAll("[data-l]").forEach((el) => el.classList.toggle("on", !!s[el.dataset.l]));
+  document.querySelectorAll("[data-l]").forEach((el) => {
+    el.classList.toggle("on", !!s[el.dataset.l]);
+    el.classList.toggle("unk", s[el.dataset.l] === null);  // its reading is lost
+  });
   $("t_supply").innerHTML = fmt(temp(s.t_supply), tUnit);
   $("t_return").innerHTML = fmt(temp(s.t_return), tUnit);
   $("delta_t").innerHTML = fmt(rise(s.delta_t), tUnit);
@@ -399,7 +404,7 @@ function render(s) {
   const alert = $("alert");
   alert.hidden = !s.problem;
   alert.textContent = s.problem ? `Problem: ${s.alerts.replaceAll("_", " ").replaceAll(",", ", ")}` : "";
-  $("meta").textContent = `${s.link} ${s.ip} · MQTT ${s.mqtt ? "connected" : "off"} · SD ${s.sd ? "logging" : "off"} · up ${Math.floor(s.uptime_s / 3600)} h`;
+  $("meta").textContent = `${s.link} ${s.ip} · MQTT ${s.mqtt ? "connected" : "off"} · SD ${s.sd ? "logging" : "off"}${s.sd_lost ? ` (${s.sd_lost} rows lost)` : ""} · up ${Math.floor(s.uptime_s / 3600)} h`;
 }
 
 // Home: what the furnace is doing, whether anything is wrong, the temperatures people look at, and
