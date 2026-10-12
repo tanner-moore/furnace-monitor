@@ -271,6 +271,7 @@ static void task(void*) {
   uint8_t rtdStep = 0, benchAi = 0;
   uint32_t lastAnalogMs = 0, lastRtdMs = 0, lastSampleMs = 0, lastSaveMs = 0;
   int lastDay = prefs.getInt("day", -1);
+  bool dayKnown = false;  // set once the clock has a real date (RTC or NTP)
   bool rtcWritten = false, filterDueWas = false;
   // Dirty filter: minute averages of the filter's pressure drop (and blower current) while the
   // blower runs, and each run's highest minute.
@@ -367,7 +368,8 @@ static void task(void*) {
                      (config.aiBlower && isnan(in.blowerAmps)) || (config.aiCo && isnan(coPpm)) ||
                      (config.aiRoom && isnan(roomC)) || (config.aiOutdoor && isnan(outdoorC)) ||
                      (config.aiPress1 && isnan(pressPa[0])) || (config.aiPress2 && isnan(pressPa[1])) ||
-                     (config.aiPress3 && isnan(pressPa[2]));
+                     (config.aiPress3 && isnan(pressPa[2])) || (config.aiLed && isnan(ledV)) ||
+                     (config.rtdSpare && isnan(spare));
 
     const time_t epoch = nowEpoch();
     xSemaphoreTake(lock, portMAX_DELAY);
@@ -377,8 +379,20 @@ static void task(void*) {
       struct tm lt;
       localtime_r(&epoch, &lt);
       const int day = dayKey(lt);
-      if (lastDay >= 0 && day != lastDay) model.newDay();
-      if (day != lastDay) {
+      if (!dayKnown) {
+        // First real date since boot, which may come from NTP well after boot. If the saved
+        // counters are from today, carry them on, adding whatever ran since boot.
+        dayKnown = true;
+        if (day == lastDay) {
+          const auto& st = model.state();
+          model.restoreDay(prefs.getUInt("cycles", 0) + st.cyclesToday,
+                           prefs.getUInt("burnerS", 0) + st.burnerSecondsToday,
+                           prefs.getUInt("highS", 0) + st.highFireSecondsToday);
+        }
+        lastDay = day;
+        saveDayCounters(lastDay);
+      } else if (day != lastDay) {
+        model.newDay();
         lastDay = day;
         saveDayCounters(lastDay);
       }
@@ -577,9 +591,10 @@ static void task(void*) {
     }
 
     // Persist counters every 10 minutes so a reboot loses little.
-    if (now - lastSaveMs >= 600000 && lastDay >= 0) {
+    if (now - lastSaveMs >= 600000) {
       lastSaveMs = now;
-      saveDayCounters(lastDay);
+      // Without a date the counters can't be filed under a day, so they wait for one.
+      if (dayKnown) saveDayCounters(lastDay);
       saveTotals();
     }
     xSemaphoreGive(lock);
@@ -618,13 +633,8 @@ void begin() {
 
   prefs.begin("furnace", false);
   prefs.remove("yday");  // day of year only, replaced by "day"
+  // Today's counters are restored by the task once the clock has a real date.
   const time_t epoch = nowEpoch();
-  if (epoch) {
-    struct tm lt;
-    localtime_r(&epoch, &lt);
-    if (prefs.getInt("day", -1) == dayKey(lt))
-      model.restoreDay(prefs.getUInt("cycles", 0), prefs.getUInt("burnerS", 0), prefs.getUInt("highS", 0));
-  }
   furnace::Totals totals;
   if (prefs.getBytesLength("totals") == sizeof totals) {
     prefs.getBytes("totals", &totals, sizeof totals);
@@ -672,15 +682,22 @@ static float hours(uint32_t seconds) { return seconds / 3600.0f; }
 void stateJson(const Snapshot& s, JsonObject o) {
   char alerts[200];
   o["phase"] = furnace::phaseName(s.st.phase);
-  o["heat_call"] = s.in.w1;
-  o["heat_call_2"] = s.in.w2;
-  o["fan_call"] = s.in.g;
-  o["burner"] = s.in.mvl || s.in.mvh;
-  o["high_fire"] = s.in.mvh;
-  o["flame"] = s.st.flame;
-  o["inducer"] = s.st.inducerOn;
-  o["inducer_high"] = s.st.inducerHigh;
-  o["blower"] = s.st.blowerOn;
+  // null where the reading behind a state is lost: the input chip isn't answering, or a fitted
+  // current sensor has no reading (the model then guesses from the heat call and gas valve).
+  auto putState = [&](const char* k, bool v, bool known) {
+    if (known) o[k] = v; else o[k] = nullptr;
+  };
+  const bool inducerKnown = s.inputsOk && !(config.aiInducer && isnan(s.in.inducerAmps));
+  const bool blowerKnown = s.inputsOk && !(config.aiBlower && isnan(s.in.blowerAmps));
+  putState("heat_call", s.in.w1, s.inputsOk);
+  putState("heat_call_2", s.in.w2, s.inputsOk);
+  putState("fan_call", s.in.g, s.inputsOk);
+  putState("burner", s.in.mvl || s.in.mvh, s.inputsOk);
+  putState("high_fire", s.in.mvh, s.inputsOk);
+  putState("flame", s.st.flame, s.inputsOk);
+  putState("inducer", s.st.inducerOn, inducerKnown);
+  putState("inducer_high", s.st.inducerHigh, inducerKnown);
+  putState("blower", s.st.blowerOn, blowerKnown);
   putNum(o, "t_supply", s.in.supplyC);
   putNum(o, "t_return", s.in.returnC);
   putNum(o, "delta_t", s.st.deltaTC);
@@ -768,6 +785,7 @@ void stateJson(const Snapshot& s, JsonObject o) {
   // last ones read, not current.
   o["inputs_ok"] = s.inputsOk;
   o["sd"] = s.sdOk;
+  o["sd_lost"] = config.sdLogging ? sdlog::lostRows() : 0;
   o["uptime_s"] = s.uptimeS;
   o["time"] = (uint32_t)s.epoch;
 }

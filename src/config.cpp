@@ -102,3 +102,55 @@ bool Config::save() const {
   LittleFS.remove(kPath);
   return LittleFS.rename(kTmpPath, kPath);
 }
+
+// Each input number may be used once. `used` has a bit per input; 0 means not fitted.
+static bool claim(uint32_t& used, uint8_t n, uint8_t max, const char* kind, const char* what, String& why) {
+  if (!n) return true;
+  if (n > max) {
+    why = String(what) + ": " + kind + " " + n + " doesn't exist (1-" + max + ")";
+    return false;
+  }
+  if (used & (1u << n)) {
+    why = String(what) + ": " + kind + " " + n + " is already used by another sensor";
+    return false;
+  }
+  used |= 1u << n;
+  return true;
+}
+
+static bool positive(float v, const char* what, String& why) {
+  if (isfinite(v) && v > 0) return true;
+  why = String(what) + " must be a number above 0";
+  return false;
+}
+
+static bool range(float lo, float hi, const char* what, String& why) {
+  if (isfinite(lo) && isfinite(hi) && lo < hi) return true;
+  why = String(what) + ": the 0 V value must be below the 10 V value";
+  return false;
+}
+
+bool Config::validate(String& why) const {
+  uint32_t di = 0, ai = 0, rtd = 0;
+  const bool ok =
+      claim(di, diW1, 16, "DI", "Heat call W1", why) && claim(di, diW2, 16, "DI", "Heat call W2", why) &&
+      claim(di, diG, 16, "DI", "Fan call G", why) && claim(di, diMvl, 16, "DI", "Gas valve low", why) &&
+      claim(di, diMvh, 16, "DI", "Gas valve high", why) &&
+      claim(ai, aiInducer, 16, "AI", "Inducer current", why) && claim(ai, aiBlower, 16, "AI", "Blower current", why) &&
+      claim(ai, aiLed, 16, "AI", "Control board light", why) && claim(ai, aiCo, 16, "AI", "CO sensor", why) &&
+      claim(ai, aiRoom, 16, "AI", "Room temperature", why) && claim(ai, aiOutdoor, 16, "AI", "Outdoor temperature", why) &&
+      claim(ai, press1Type == "ai" ? aiPress1 : 0, 16, "AI", press1Name.c_str(), why) &&
+      claim(ai, press2Type == "ai" ? aiPress2 : 0, 16, "AI", press2Name.c_str(), why) &&
+      claim(ai, press3Type == "ai" ? aiPress3 : 0, 16, "AI", press3Name.c_str(), why) &&
+      claim(rtd, rtdSupply, 4, "PT100", "Supply air", why) && claim(rtd, rtdReturn, 4, "PT100", "Return air", why) &&
+      claim(rtd, rtdFlue, 4, "PT100", "Flue", why) && claim(rtd, rtdSpare, 4, "PT100", spareName.c_str(), why) &&
+      positive(inducerAmpsPerVolt, "Inducer amps per volt", why) &&
+      positive(blowerAmpsPerVolt, "Blower amps per volt", why) && positive(coPpmPerVolt, "CO ppm per volt", why) &&
+      positive(ledOnVolts, "Control board light threshold", why) &&
+      range(roomLowC, roomHighC, "Room temperature sensor", why) &&
+      range(outdoorLowC, outdoorHighC, "Outdoor temperature sensor", why) &&
+      range(press1LowPa, press1HighPa, press1Name.c_str(), why) &&
+      range(press2LowPa, press2HighPa, press2Name.c_str(), why) &&
+      range(press3LowPa, press3HighPa, press3Name.c_str(), why);
+  return ok;
+}

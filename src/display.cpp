@@ -28,7 +28,7 @@ static const char* phaseLabel(furnace::Phase p) {
     case furnace::Phase::LowFire: return "Low fire";
     case furnace::Phase::HighFire: return "High fire";
     case furnace::Phase::PostPurge: return "Post-purge";
-    case furnace::Phase::BlowerOverrun: return "Blower overrun";
+    case furnace::Phase::BlowerOverrun: return "Cooling down";  // "Blower overrun" is too wide at size 3
     case furnace::Phase::Lockout: return "LOCKOUT";
   }
   return "?";
@@ -61,7 +61,8 @@ static void draw(const monitor::Snapshot& s) {
   c.setTextColor(kInk);
   c.setTextSize(3);
   c.setCursor(8, 11);
-  c.print(phaseLabel(s.st.phase));
+  // Without the input chip the phase is the last one read, not the current one.
+  c.print(s.inputsOk ? phaseLabel(s.st.phase) : "Unknown");
 
   int16_t y = 56;
   tempLine(c, y, "Supply", s.in.supplyC);
@@ -73,18 +74,29 @@ static void draw(const monitor::Snapshot& s) {
   y += 32;
   c.setTextSize(2);
   if (alert) {
+    // One alert per line; the longest name fits a line at this size. Three lines fit above the
+    // address, so with more than three the last line counts the rest.
     char names[160];
     furnace::alertNames(s.st.alerts, names, sizeof names);
-    for (char* p = names; *p; p++)
-      if (*p == '_') *p = ' ';
+    char* list[11];
+    int n = 0;
+    for (char* name = strtok(names, ","); name && n < 11; name = strtok(nullptr, ",")) list[n++] = name;
+    const int shown = n > 3 ? 2 : n;
     c.setTextColor(kBad);
-    c.setCursor(8, y);
-    c.setTextWrap(true);
-    c.print(names);
+    for (int i = 0; i < shown; i++) {
+      for (char* p = list[i]; *p; p++)
+        if (*p == '_') *p = ' ';
+      c.setCursor(8, y + 18 * i);
+      c.print(list[i]);
+    }
+    if (n > shown) {
+      c.setCursor(8, y + 18 * shown);
+      c.printf("+%d more", n - shown);
+    }
   } else {
     c.setTextColor(kOk);
     c.setCursor(8, y);
-    c.printf("%lu cycles, %lu min", (unsigned long)s.st.cyclesToday, (unsigned long)(s.st.burnerSecondsToday / 60));
+    c.printf("%lu cycles %lu min", (unsigned long)s.st.cyclesToday, (unsigned long)(s.st.burnerSecondsToday / 60));
     if (s.filterDirty) {
       c.setCursor(8, y + 22);
       c.setTextColor(kBad);

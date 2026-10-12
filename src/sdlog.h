@@ -28,6 +28,8 @@ struct CycleRow {
 // Mounts the card. Call after co16::begin() (which starts the SPI bus).
 bool begin();
 bool ok();
+// Rows dropped since boot because the queue was full, no card was mounted or a write failed.
+uint32_t lostRows();
 
 // Boot-time reads, before the other tasks start. Rows come oldest first.
 void readMinutes(uint32_t sinceEpoch, void (*fn)(const MinuteRow&));

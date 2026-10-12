@@ -26,6 +26,7 @@ struct Item {
 
 static QueueHandle_t queue;
 static bool mounted = false;
+static volatile uint32_t lost = 0;  // rows not written since boot: queue full, no card, or a failed write
 static uint32_t lastMountMs = 0;
 
 // --- formatting ---------------------------------------------------------------
@@ -131,6 +132,7 @@ static void write(const Item& it) {
   if (!ok) {
     log_w("SD write to %s failed", path);
     mounted = false;
+    lost = lost + 1;
   }
 }
 
@@ -140,11 +142,12 @@ static void task(void*) {
     if (xQueueReceive(queue, &it, portMAX_DELAY) != pdTRUE) continue;
     if (!mounted && millis() - lastMountMs >= kRemountEveryMs) mount();
     if (mounted) write(it);
+    else lost = lost + 1;
   }
 }
 
 static void enqueue(const Item& it) {
-  if (queue) xQueueSend(queue, &it, 0);
+  if (queue && xQueueSend(queue, &it, 0) != pdTRUE) lost = lost + 1;
 }
 
 bool begin() {
@@ -156,6 +159,8 @@ bool begin() {
 }
 
 bool ok() { return mounted; }
+
+uint32_t lostRows() { return lost; }
 
 void logMinute(const MinuteRow& r) {
   Item it{};
