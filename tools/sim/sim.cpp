@@ -327,7 +327,7 @@ int main(int argc, char** argv) {
       snprintf(buf, sizeof buf, ",\"alerts\":\"%s\",\"board_code\":%d,\"board_status\":\"%s\"", alerts,
                in.boardCode, FlashDecoder::describe(in.boardCode));
       out += buf;
-      snprintf(buf, sizeof buf, ",\"inputs\":%u,\"uptime_s\":%ld,\"time\":%lld,\"flags\":%u,\"events\":[", raw, t,
+      snprintf(buf, sizeof buf, ",\"inputs\":%u,\"inputs_ok\":true,\"uptime_s\":%ld,\"time\":%lld,\"flags\":%u,\"events\":[", raw, t,
                (long long)epoch, flags);
       out += buf;
       out += events;

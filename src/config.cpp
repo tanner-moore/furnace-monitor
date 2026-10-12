@@ -5,6 +5,9 @@
 Config config;
 
 static const char* kPath = "/config.json";
+// Settings are written here first and renamed over kPath, so a power cut mid-save leaves the old
+// file (or a complete new one) rather than a half-written one.
+static const char* kTmpPath = "/config.tmp";
 
 // Each field is listed once here and used for both directions.
 #define CONFIG_FIELDS(X)                                   \
@@ -65,16 +68,19 @@ void Config::fromJson(JsonObjectConst o) {
   }
 }
 
-bool Config::load() {
-  File f = LittleFS.open(kPath, "r");
+static bool readFile(const char* path, JsonDocument& doc) {
+  File f = LittleFS.open(path, "r");
   if (!f) return false;
-  JsonDocument doc;
   DeserializationError err = deserializeJson(doc, f);
   f.close();
-  if (err) {
-    log_e("config parse failed: %s", err.c_str());
-    return false;
-  }
+  if (err) log_e("%s parse failed: %s", path, err.c_str());
+  return !err;
+}
+
+bool Config::load() {
+  JsonDocument doc;
+  // A complete temp file means the last save stopped just before its rename.
+  if (!readFile(kPath, doc) && !readFile(kTmpPath, doc)) return false;
   fromJson(doc.as<JsonObjectConst>());
   return true;
 }
@@ -82,9 +88,17 @@ bool Config::load() {
 bool Config::save() const {
   JsonDocument doc;
   toJson(doc.to<JsonObject>(), true);
-  File f = LittleFS.open(kPath, "w");
+  const size_t len = measureJson(doc);
+  File f = LittleFS.open(kTmpPath, "w");
   if (!f) return false;
-  bool ok = serializeJson(doc, f) > 0;
+  const bool written = serializeJson(doc, f) == len;
   f.close();
-  return ok;
+  if (!written) {
+    LittleFS.remove(kTmpPath);
+    return false;
+  }
+  if (LittleFS.rename(kTmpPath, kPath)) return true;
+  // In case the file system won't rename over an existing file.
+  LittleFS.remove(kPath);
+  return LittleFS.rename(kTmpPath, kPath);
 }

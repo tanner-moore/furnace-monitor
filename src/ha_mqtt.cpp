@@ -52,6 +52,10 @@ static JsonObject sensor(JsonObject cmps, const char* key, const char* name, con
   return c;
 }
 
+// An optional sensor that isn't fitted: a component with only its platform removes the entity,
+// so turning a sensor off on the settings page doesn't leave a stale one in Home Assistant.
+static void removed(JsonObject cmps, const char* key, const char* platform) { cmps[key]["p"] = platform; }
+
 static void publishDiscovery() {
   JsonDocument doc;
   JsonObject dev = doc["dev"].to<JsonObject>();
@@ -119,29 +123,46 @@ static void publishDiscovery() {
   if (config.filterPressSensor >= 1 && config.filterPressSensor <= 3 && fsAi[config.filterPressSensor - 1]) {
     binary(cmps, "filter_dirty", "Filter dirty", "problem");
     sensor(cmps, "filter_dp", "Filter pressure drop (blower running)", "Pa", "pressure", "measurement");
+  } else {
+    removed(cmps, "filter_dirty", "binary_sensor");
+    removed(cmps, "filter_dp", "sensor");
   }
   JsonObject reset = component(cmps, "filter_reset", "button", "Filter changed");
   reset["cmd_t"] = topicFilterReset;
   reset["pl_prs"] = "PRESS";
 
-  if (config.aiCo) binary(cmps, "co_alarm", "Carbon monoxide", "carbon_monoxide");
-  if (config.aiCo) sensor(cmps, "co_ppm", "Carbon monoxide level", "ppm", "carbon_monoxide", "measurement");
+  if (config.aiCo) {
+    binary(cmps, "co_alarm", "Carbon monoxide", "carbon_monoxide");
+    sensor(cmps, "co_ppm", "Carbon monoxide level", "ppm", "carbon_monoxide", "measurement");
+  } else {
+    removed(cmps, "co_alarm", "binary_sensor");
+    removed(cmps, "co_ppm", "sensor");
+  }
   if (config.aiRoom) sensor(cmps, "t_room", "Room temperature", "°C", "temperature", "measurement");
+  else removed(cmps, "t_room", "sensor");
   if (config.aiOutdoor || config.weatherOn)
     sensor(cmps, "t_out", "Outdoor temperature", "°C", "temperature", "measurement");
+  else
+    removed(cmps, "t_out", "sensor");
   // Pressures in pascals; Home Assistant can show them in inH2O.
   static String pressTitle[3];
   const uint8_t pressAi[3] = {config.aiPress1, config.aiPress2, config.aiPress3};
   const String* pressName[3] = {&config.press1Name, &config.press2Name, &config.press3Name};
   for (int i = 0; i < 3; i++) {
-    if (!pressAi[i]) continue;
+    const char* key = i == 0 ? "p1" : i == 1 ? "p2" : "p3";
+    if (!pressAi[i]) {
+      removed(cmps, key, "sensor");
+      continue;
+    }
     pressTitle[i] = *pressName[i];
-    sensor(cmps, i == 0 ? "p1" : i == 1 ? "p2" : "p3", pressTitle[i].c_str(), "Pa", "pressure", "measurement");
+    sensor(cmps, key, pressTitle[i].c_str(), "Pa", "pressure", "measurement");
   }
   if (config.rtdSpare) {
     static String spareTitle;
     spareTitle = config.spareName + " temperature";
     sensor(cmps, "t_spare", spareTitle.c_str(), "°C", "temperature", "measurement");
+  } else {
+    removed(cmps, "t_spare", "sensor");
   }
 
   JsonObject board = sensor(cmps, "board_status", "Control board status", nullptr, nullptr, nullptr);
@@ -149,6 +170,12 @@ static void publishDiscovery() {
   board["ent_cat"] = "diagnostic";
   JsonObject uptime = sensor(cmps, "uptime_s", "Uptime", "s", "duration", nullptr);
   uptime["ent_cat"] = "diagnostic";
+  // Off when the monitor can't read the heat call and gas valve inputs, so the furnace state shown
+  // is not current. Separate from "Furnace problem", which also covers faults in the furnace.
+  JsonObject inputs = component(cmps, "inputs_ok", "binary_sensor", "Input readings");
+  inputs["val_tpl"] = "{{ 'ON' if value_json.inputs_ok else 'OFF' }}";
+  inputs["dev_cla"] = "connectivity";
+  inputs["ent_cat"] = "diagnostic";
   JsonObject sd = component(cmps, "sd", "binary_sensor", "SD card logging");
   sd["val_tpl"] = "{{ 'ON' if value_json.sd else 'OFF' }}";
   sd["dev_cla"] = "running";
@@ -172,11 +199,12 @@ static void publishState(bool force) {
   String withoutUptime;
   serializeJson(doc, withoutUptime);
   if (!force && withoutUptime == lastStateJson) return;
-  lastStateJson = withoutUptime;
   doc["uptime_s"] = s.uptimeS;
   String payload;
   serializeJson(doc, payload);
-  mqtt.publish(topicState.c_str(), payload.c_str());
+  // On failure, remember nothing, so the next pass tries again.
+  if (!mqtt.publish(topicState.c_str(), payload.c_str())) return;
+  lastStateJson = withoutUptime;
   lastPublishMs = millis();
 }
 
@@ -191,7 +219,8 @@ static void publishEvents() {
       doc["text"] = ev[i].text;
       String payload;
       serializeJson(doc, payload);
-      mqtt.publish(topicEvent.c_str(), payload.c_str());
+      // Not sent: stop here and resend from this event on the next pass or connection.
+      if (!mqtt.publish(topicEvent.c_str(), payload.c_str())) return;
       lastEventSeq = ev[i].seq;
     }
   }
@@ -218,7 +247,7 @@ static void publishCycles() {
       put("blower_a", s.blowerAmps);
       String payload;
       serializeJson(doc, payload);
-      mqtt.publish(topicCycle.c_str(), payload.c_str());
+      if (!mqtt.publish(topicCycle.c_str(), payload.c_str())) return;
       lastCycleSeq = c[i].seq;
     }
   }
