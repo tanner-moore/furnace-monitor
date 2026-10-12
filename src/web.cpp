@@ -49,6 +49,7 @@ static void handleUpload(AsyncWebServerRequest* req, const String& filename, siz
                          bool final) {
   if (index == 0) {
     if (!req->authenticate(config.webUser.c_str(), config.webPass.c_str())) return;
+    if (Update.isRunning()) Update.abort();  // an earlier upload that was cut off
     const bool fs = req->hasParam("target") && req->getParam("target")->value() == "fs";
     if (!Update.begin(UPDATE_SIZE_UNKNOWN, fs ? U_SPIFFS : U_FLASH)) Update.printError(Serial);
   }
@@ -207,12 +208,14 @@ void begin() {
 
   auto* save = new AsyncCallbackJsonWebHandler("/api/config", [](AsyncWebServerRequest* req, JsonVariant& body) {
     if (!authorized(req)) return;
-    config.fromJson(body.as<JsonObjectConst>());
-    if (!config.save()) {
+    // Save a copy and restart into it. The running config is left alone: the monitor task reads
+    // it at the same time, and changing its strings under that task is not safe.
+    Config next = config;
+    next.fromJson(body.as<JsonObjectConst>());
+    if (!next.save()) {
       req->send(500, "text/plain", "could not save settings");
       return;
     }
-    monitor::applySettings();
     monitor::logEvent("settings saved, restarting");
     req->send(200, "text/plain", "saved; restarting");
     rebootPending = true;
@@ -225,7 +228,8 @@ void begin() {
       "/update", HTTP_POST,
       [](AsyncWebServerRequest* req) {
         if (!authorized(req)) return;
-        const bool ok = !Update.hasError();
+        // Only a complete, verified image counts; anything else keeps the running firmware.
+        const bool ok = Update.isFinished() && !Update.hasError();
         req->send(ok ? 200 : 500, "text/plain", ok ? "update ok; restarting" : "update failed");
         if (ok) {
           rebootPending = true;

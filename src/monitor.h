@@ -86,9 +86,6 @@ void resetFilter();
 // and RTD channel is read) for the next 15 seconds.
 Bench bench();
 
-// Re-reads model settings from config (after the settings page saves).
-void applySettings();
-
 // Logs a free-form event (network up, firmware updated, ...).
 void logEvent(const char* fmt, ...);
 

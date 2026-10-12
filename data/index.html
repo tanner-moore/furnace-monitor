@@ -412,10 +412,13 @@ const HOME_PHASE = {
 function renderHome(s) {
   const heating = ["heat_call", "ignition", "low_fire", "high_fire", "post_purge", "blower_overrun"].includes(s.phase);
   const bad = !!s.problem || s.phase === "lockout";
+  // The input chip isn't answering, so the phase is the last one read, not the current one.
+  const blind = s.inputs_ok === false;
   $("hero").classList.toggle("bad", bad);
   $("hDot").className = `dot${bad ? " bad" : heating ? " on" : ""}`;
-  $("hPhase").textContent = HOME_PHASE[s.phase] || s.phase;
-  $("hSub").textContent = bad ? `Problem: ${(s.alerts || s.board_status || "").replaceAll("_", " ").replaceAll(",", ", ")}`
+  $("hPhase").textContent = blind ? "State unknown" : HOME_PHASE[s.phase] || s.phase;
+  $("hSub").textContent = blind ? "The monitor can't read the thermostat and gas valve inputs"
+    : bad ? `Problem: ${(s.alerts || s.board_status || "").replaceAll("_", " ").replaceAll(",", ", ")}`
     : s.phase === "high_fire" || s.phase === "low_fire" ? `Supply air ${fmtPlain(temp(s.t_supply), 1)}${tUnit}, ${fmtPlain(rise(s.delta_t), 0)}${tUnit} above return`
     : "No problems";
   // Up to three temperatures: room and outdoor when fitted, then supply and return air.

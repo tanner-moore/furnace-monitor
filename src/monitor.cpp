@@ -121,12 +121,6 @@ void logEvent(const char* fmt, ...) {
   xSemaphoreGive(lock);
 }
 
-void applySettings() {
-  xSemaphoreTake(lock, portMAX_DELAY);
-  model.setSettings(config.model);
-  xSemaphoreGive(lock);
-}
-
 void resetFilter() { filterResetPending = true; }
 
 Bench bench() {
@@ -139,9 +133,13 @@ Bench bench() {
 
 // --- persistence ----------------------------------------------------------
 
-static void saveDayCounters(int yday) {
+// The local date as YYYYDDD (year and day of year), so a saved day never matches the same day in
+// another year.
+static int dayKey(const struct tm& lt) { return (lt.tm_year + 1900) * 1000 + lt.tm_yday; }
+
+static void saveDayCounters(int day) {
   const auto& st = model.state();
-  prefs.putInt("yday", yday);
+  prefs.putInt("day", day);
   prefs.putUInt("cycles", st.cyclesToday);
   prefs.putUInt("burnerS", st.burnerSecondsToday);
   prefs.putUInt("highS", st.highFireSecondsToday);
@@ -272,7 +270,7 @@ static void task(void*) {
   bool inputsOk = false;
   uint8_t rtdStep = 0, benchAi = 0;
   uint32_t lastAnalogMs = 0, lastRtdMs = 0, lastSampleMs = 0, lastSaveMs = 0;
-  int lastYday = prefs.getInt("yday", -1);
+  int lastDay = prefs.getInt("day", -1);
   bool rtcWritten = false, filterDueWas = false;
   // Dirty filter: minute averages of the filter's pressure drop (and blower current) while the
   // blower runs, and each run's highest minute.
@@ -378,10 +376,11 @@ static void task(void*) {
     if (epoch) {
       struct tm lt;
       localtime_r(&epoch, &lt);
-      if (lastYday >= 0 && lt.tm_yday != lastYday) model.newDay();
-      if (lt.tm_yday != lastYday) {
-        lastYday = lt.tm_yday;
-        saveDayCounters(lastYday);
+      const int day = dayKey(lt);
+      if (lastDay >= 0 && day != lastDay) model.newDay();
+      if (day != lastDay) {
+        lastDay = day;
+        saveDayCounters(lastDay);
       }
     }
 
@@ -578,9 +577,9 @@ static void task(void*) {
     }
 
     // Persist counters every 10 minutes so a reboot loses little.
-    if (now - lastSaveMs >= 600000 && lastYday >= 0) {
+    if (now - lastSaveMs >= 600000 && lastDay >= 0) {
       lastSaveMs = now;
-      saveDayCounters(lastYday);
+      saveDayCounters(lastDay);
       saveTotals();
     }
     xSemaphoreGive(lock);
@@ -605,8 +604,8 @@ void begin() {
   lock = xSemaphoreCreateMutex();
   model.setSettings(config.model);
 
-  if (!allocRing(fine, kFineLen, kFinePeriodS) || !allocRing(coarse, kCoarseLen, kCoarsePeriodS))
-    log_e("no PSRAM for history");
+  if (!allocRing(fine, kFineLen, kFinePeriodS)) log_e("no PSRAM for 24 h history");
+  if (!allocRing(coarse, kCoarseLen, kCoarsePeriodS)) log_e("no PSRAM for 30 day history");
 
   co16::begin();
 
@@ -618,11 +617,12 @@ void begin() {
   }
 
   prefs.begin("furnace", false);
+  prefs.remove("yday");  // day of year only, replaced by "day"
   const time_t epoch = nowEpoch();
   if (epoch) {
     struct tm lt;
     localtime_r(&epoch, &lt);
-    if (prefs.getInt("yday", -1) == lt.tm_yday)
+    if (prefs.getInt("day", -1) == dayKey(lt))
       model.restoreDay(prefs.getUInt("cycles", 0), prefs.getUInt("burnerS", 0), prefs.getUInt("highS", 0));
   }
   furnace::Totals totals;
@@ -764,6 +764,9 @@ void stateJson(const Snapshot& s, JsonObject o) {
   o["board_code"] = s.in.boardCode;
   o["board_status"] = FlashDecoder::describe(s.in.boardCode);
   o["inputs"] = s.rawInputs;
+  // False while the input chip isn't answering: the heat calls, gas valve and phase above are the
+  // last ones read, not current.
+  o["inputs_ok"] = s.inputsOk;
   o["sd"] = s.sdOk;
   o["uptime_s"] = s.uptimeS;
   o["time"] = (uint32_t)s.epoch;
